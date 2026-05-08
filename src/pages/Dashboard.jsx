@@ -11,7 +11,12 @@ function parseDate(str) {
   const [y,m,d]=str.split('-').map(Number); const dt=new Date(y,m-1,d); dt.setHours(0,0,0,0); return dt
 }
 function formatAR(str) { const [y,m,d]=str.split('-'); return `${d}/${m}/${y}` }
-function formatShort(str) { if(!str) return ''; const [y,m,d]=str.split('-'); return `${d}/${m}` }
+function selloExpiry(str) {
+  if(!str) return ''
+  const [y,m,d]=str.split('-').map(Number)
+  const dt=new Date(y,m-1,d); dt.setDate(dt.getDate()+15)
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`
+}
 function daysLeft(fechaCorte) {
   const expiry=new Date(parseDate(fechaCorte).getTime()+15*86400000)
   return Math.round((expiry-TODAY())/86400000)
@@ -66,8 +71,13 @@ function drawLoyaltyCard(canvas, client) {
       ctx.fillText('Corte',cx,cy-4); ctx.fillText('gratis',cx,cy+15)
     } else {
       ctx.fillStyle='#aaa'; ctx.font='bold 13px Arial'
-      ctx.fillText(String(i+1).padStart(2,'0'),cx,cy-10)
-      if(stamped){ ctx.fillStyle='#FF6B00'; ctx.font='bold 13px Arial'; ctx.fillText(formatShort(sellos[i]),cx,cy+12) }
+      ctx.fillText(String(i+1).padStart(2,'0'),cx,cy-14)
+      if(stamped){
+        ctx.fillStyle='#aaa'; ctx.font='10px Arial'
+        ctx.fillText('volvé antes',cx,cy+2)
+        ctx.fillStyle='#FF6B00'; ctx.font='bold 13px Arial'
+        ctx.fillText(selloExpiry(sellos[i]),cx,cy+16)
+      }
     }
   }
   ctx.fillStyle='#fff'; ctx.font='bold 24px Arial'
@@ -184,7 +194,6 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
 
-      {/* Modal tarjeta */}
       {cardClient && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:1000,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -197,7 +206,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Modal editar */}
       {editing && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
