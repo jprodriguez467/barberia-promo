@@ -83,6 +83,8 @@ export default function Dashboard() {
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
   const [cardId,setCardId]     = useState(null)
+  const [editing,setEditing]   = useState(null)
+  const [editForm,setEditForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const canvasRef = useRef(null)
 
@@ -144,6 +146,31 @@ export default function Dashboard() {
     } catch(err){ alert('Error: '+err.message) }
   }
 
+  function openEdit(c) {
+    setEditForm({
+      nombre:c.nombre, apellido:c.apellido,
+      telefono:c.telefono||'', fechaCorte:c.fechaCorte,
+      servicio:c.servicio||'pelo'
+    })
+    setEditing(c.id)
+  }
+
+  async function handleEditSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await updateDoc(doc(db,'clientes',editing),{
+        nombre:editForm.nombre.trim(),
+        apellido:editForm.apellido.trim(),
+        telefono:editForm.telefono.trim(),
+        fechaCorte:editForm.fechaCorte,
+        servicio:editForm.servicio,
+      })
+      setEditing(null)
+    } catch(err){ alert('Error: '+err.message) }
+    finally{ setSaving(false) }
+  }
+
   function handleDownload() {
     if(!canvasRef.current||!cardClient) return
     const a=document.createElement('a')
@@ -157,6 +184,7 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
 
+      {/* Modal tarjeta */}
       {cardClient && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:1000,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -166,6 +194,52 @@ export default function Dashboard() {
             <button className={styles.btnPrimary} onClick={handleDownload}>⬇️ Descargar</button>
             <button className={styles.btnSecondary} onClick={()=>setCardId(null)}>Cerrar</button>
           </div>
+        </div>
+      )}
+
+      {/* Modal editar */}
+      {editing && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
+          display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
+          <form onSubmit={handleEditSave}
+            style={{background:'#fff',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'480px',display:'flex',flexDirection:'column',gap:'12px'}}>
+            <h2 style={{margin:0,fontSize:'18px'}}>✏️ Editar cliente</h2>
+            <div className={styles.formGrid}>
+              <div className={styles.field}>
+                <label>Nombre</label>
+                <input type="text" value={editForm.nombre} required
+                  onChange={e=>setEditForm(f=>({...f,nombre:e.target.value}))} />
+              </div>
+              <div className={styles.field}>
+                <label>Apellido</label>
+                <input type="text" value={editForm.apellido} required
+                  onChange={e=>setEditForm(f=>({...f,apellido:e.target.value}))} />
+              </div>
+              <div className={styles.field}>
+                <label>Teléfono</label>
+                <input type="tel" value={editForm.telefono}
+                  onChange={e=>setEditForm(f=>({...f,telefono:e.target.value}))} />
+              </div>
+              <div className={styles.field}>
+                <label>Servicio</label>
+                <select value={editForm.servicio} onChange={e=>setEditForm(f=>({...f,servicio:e.target.value}))}>
+                  <option value="pelo">✂️ Corte de pelo — $12.000</option>
+                  <option value="pelo_barba">✂️🧔 Pelo y barba — $17.000</option>
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Fecha último corte</label>
+                <input type="date" value={editForm.fechaCorte} required
+                  onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} />
+              </div>
+            </div>
+            <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
+              <button type="button" className={styles.btnSecondary} onClick={()=>setEditing(null)}>Cancelar</button>
+              <button type="submit" className={styles.btnPrimary} disabled={saving}>
+                {saving?'Guardando...':'Guardar cambios'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -289,6 +363,8 @@ export default function Dashboard() {
                     onClick={()=>handleAddSello(c)} title="Agregar corte de hoy">+✂️</button>
                   <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
                     onClick={()=>setCardId(c.id)} title="Ver tarjeta">🎫</button>
+                  <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
+                    onClick={()=>openEdit(c)} title="Editar">✏️</button>
                   <button className={styles.btnDelete} onClick={()=>setDeleting(c.id)} title="Eliminar">🗑</button>
                 </div>
               )}
