@@ -29,6 +29,8 @@ const todayISO = new Date().toISOString().split('T')[0]
 function drawLoyaltyCard(canvas, client) {
   const ctx=canvas.getContext('2d'), W=canvas.width, H=canvas.height
   const sellos = client.sellos?.length ? [...client.sellos].sort() : [client.fechaCorte]
+  const precio = client.servicio==='pelo_barba' ? '$17.000' : '$12.000'
+  const servNombre = client.servicio==='pelo_barba' ? 'Pelo y barba' : 'Corte de pelo'
 
   ctx.fillStyle='#111'; ctx.fillRect(0,0,W,H)
   ctx.save(); ctx.strokeStyle='rgba(200,70,0,0.22)'; ctx.lineWidth=28
@@ -69,8 +71,8 @@ function drawLoyaltyCard(canvas, client) {
     }
   }
   ctx.fillStyle='#fff'; ctx.font='bold 24px Arial'
-  ctx.textAlign='left'; ctx.fillText('$12.000',22,H-14)
-  ctx.textAlign='center'; ctx.fillText('Corte de pelo',W/2,H-14)
+  ctx.textAlign='left'; ctx.fillText(precio,22,H-14)
+  ctx.textAlign='center'; ctx.fillText(servNombre,W/2,H-14)
 }
 
 export default function Dashboard() {
@@ -81,7 +83,7 @@ export default function Dashboard() {
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
   const [cardId,setCardId]     = useState(null)
-  const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO})
+  const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -119,9 +121,10 @@ export default function Dashboard() {
       await addDoc(collection(db,'clientes'),{
         nombre:form.nombre.trim(), apellido:form.apellido.trim(),
         telefono:form.telefono.trim(), fechaCorte:form.fechaCorte,
-        sellos:[form.fechaCorte], createdAt:serverTimestamp(),
+        sellos:[form.fechaCorte], servicio:form.servicio,
+        createdAt:serverTimestamp(),
       })
-      setForm({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO})
+      setForm({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
       setShowForm(false)
     } catch(err){ alert('Error: '+err.message) }
     finally{ setSaving(false) }
@@ -210,6 +213,13 @@ export default function Dashboard() {
                 onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} />
             </div>
             <div className={styles.field}>
+              <label>Servicio</label>
+              <select value={form.servicio} onChange={e=>setForm(f=>({...f,servicio:e.target.value}))}>
+                <option value="pelo">✂️ Corte de pelo — $12.000</option>
+                <option value="pelo_barba">✂️🧔 Pelo y barba — $17.000</option>
+              </select>
+            </div>
+            <div className={styles.field}>
               <label>Fecha del último corte</label>
               <input type="date" value={form.fechaCorte} required
                 onChange={e=>setForm(f=>({...f,fechaCorte:e.target.value}))} />
@@ -257,7 +267,7 @@ export default function Dashboard() {
                 <p className={styles.name}>{c.nombre} {c.apellido}</p>
                 <p className={styles.meta}>
                   {c.telefono&&<span>📞 {c.telefono}&nbsp;</span>}
-                  <span>✂️ {formatAR(c.fechaCorte)}</span>
+                  <span>{c.servicio==='pelo_barba'?'✂️🧔':'✂️'} {formatAR(c.fechaCorte)}</span>
                   <span className={styles.expiry}> · vence {expiryStr}</span>
                 </p>
                 <p style={{fontSize:'11px',color:'#888',marginTop:'2px'}}>
