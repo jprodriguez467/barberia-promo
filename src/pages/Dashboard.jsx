@@ -156,6 +156,15 @@ export default function Dashboard() {
     } catch(err){ alert('Error: '+err.message) }
   }
 
+  async function handleRemoveLastSello(clientId, sellos) {
+    if(sellos.length<=1){ alert('No se puede borrar el único sello.'); return }
+    const newSellos = [...sellos].sort().slice(0,-1)
+    const newFecha = newSellos[newSellos.length-1]
+    try{
+      await updateDoc(doc(db,'clientes',clientId),{ sellos:newSellos, fechaCorte:newFecha })
+    } catch(err){ alert('Error: '+err.message) }
+  }
+
   function openEdit(c) {
     setEditForm({
       nombre:c.nombre, apellido:c.apellido,
@@ -188,6 +197,7 @@ export default function Dashboard() {
     a.href=canvasRef.current.toDataURL(); a.click()
   }
 
+  const editingClient = editing ? clients.find(c=>c.id===editing) : null
   const todayLabel = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
   if(loading) return <div className={styles.loading}>Cargando...</div>
 
@@ -241,6 +251,30 @@ export default function Dashboard() {
                   onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} />
               </div>
             </div>
+
+            {editingClient && (()=>{
+              const sellos = editingClient.sellos?.length ? [...editingClient.sellos].sort() : [editingClient.fechaCorte]
+              return (
+                <div style={{borderTop:'1px solid #eee',paddingTop:'12px'}}>
+                  <p style={{margin:'0 0 8px',fontWeight:'bold',fontSize:'14px'}}>🎫 Sellos ({sellos.length}/10)</p>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}}>
+                    {sellos.map((s,i)=>(
+                      <span key={i} style={{background:'#f0f0f0',borderRadius:'6px',padding:'3px 8px',fontSize:'12px'}}>
+                        {i+1}. {formatAR(s)}
+                      </span>
+                    ))}
+                  </div>
+                  {sellos.length>1 && (
+                    <button type="button" className={styles.btnDanger}
+                      style={{fontSize:'13px',padding:'6px 12px'}}
+                      onClick={()=>handleRemoveLastSello(editing, sellos)}>
+                      🗑 Borrar último sello ({formatAR(sellos[sellos.length-1])})
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
+
             <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
               <button type="button" className={styles.btnSecondary} onClick={()=>setEditing(null)}>Cancelar</button>
               <button type="submit" className={styles.btnPrimary} disabled={saving}>
