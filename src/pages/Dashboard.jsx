@@ -110,10 +110,9 @@ export default function Dashboard() {
   },[])
 
   const cardClient = cardId ? clients.find(c=>c.id===cardId) : null
-  useEffect(() => {
-    if(cardClient && canvasRef.current) drawLoyaltyCard(canvasRef.current, cardClient)
-  },[cardClient])
-
+ useEffect(() => {
+  if(cardClient && canvasRef.current) drawLoyaltyCard(canvasRef.current, cardClient)
+},[JSON.stringify(cardClient)])
   const urgente = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=3}).length
   const semana  = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=7}).length
   const activos = clients.filter(c=>daysLeft(c.fechaCorte)>=0).length
