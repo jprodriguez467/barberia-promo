@@ -97,6 +97,8 @@ export default function Dashboard() {
   const [editing,setEditing]   = useState(null)
   const [editForm,setEditForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
+  const [selloModal,setSelloModal] = useState(null) // cliente al que se le agrega sello
+  const [selloFecha,setSelloFecha] = useState(todayISO)
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -155,12 +157,21 @@ export default function Dashboard() {
     finally{ setDeleting(null) }
   }
 
-  async function handleAddSello(c) {
+  function openSelloModal(c) {
     const sel = c.sellos?.length ? c.sellos : [c.fechaCorte]
     if(sel.length>=10){ alert('¡Tarjeta completa! El cliente ganó un corte gratis 🏆'); return }
+    setSelloModal(c)
+    setSelloFecha(todayISO)
+  }
+
+  async function confirmSello() {
+    if(!selloModal||!selloFecha) return
+    setSaving(true)
     try{
-      await updateDoc(doc(db,'clientes',c.id),{ sellos:arrayUnion(todayISO), fechaCorte:todayISO })
+      await updateDoc(doc(db,'clientes',selloModal.id),{ sellos:arrayUnion(selloFecha), fechaCorte:selloFecha })
+      setSelloModal(null)
     } catch(err){ alert('Error: '+err.message) }
+    finally{ setSaving(false) }
   }
 
   async function handleRemoveLastSello(clientId, sellos) {
@@ -211,6 +222,7 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
 
+      {/* Modal tarjeta */}
       {cardClient && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:1000,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -223,6 +235,31 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Modal agregar sello con fecha */}
+      {selloModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
+          display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'360px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <h2 style={{margin:0,fontSize:'18px'}}>✂️ Agregar corte</h2>
+            <p style={{margin:0,fontSize:'14px',color:'#555'}}>
+              Cliente: <strong>{selloModal.nombre} {selloModal.apellido}</strong>
+            </p>
+            <div className={styles.field}>
+              <label>Fecha del corte</label>
+              <input type="date" value={selloFecha}
+                onChange={e=>setSelloFecha(e.target.value)} />
+            </div>
+            <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
+              <button className={styles.btnSecondary} onClick={()=>setSelloModal(null)}>Cancelar</button>
+              <button className={styles.btnPrimary} onClick={confirmSello} disabled={saving}>
+                {saving?'Guardando...':'✅ Confirmar sello'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar */}
       {editing && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -429,7 +466,7 @@ export default function Dashboard() {
               ):(
                 <div style={{display:'flex',gap:'4px'}}>
                   <button className={styles.btnPrimary} style={{padding:'4px 8px',fontSize:'13px'}}
-                    onClick={()=>handleAddSello(c)} title="Agregar corte de hoy">+✂️</button>
+                    onClick={()=>openSelloModal(c)} title="Agregar corte">+✂️</button>
                   <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
                     onClick={()=>setCardId(c.id)} title="Ver tarjeta">🎫</button>
                   <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
