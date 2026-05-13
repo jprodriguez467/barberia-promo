@@ -89,6 +89,7 @@ export default function Dashboard() {
   const [clients,setClients]   = useState([])
   const [loading,setLoading]   = useState(true)
   const [filter,setFilter]     = useState('todos')
+  const [search,setSearch]     = useState('')
   const [showForm,setShowForm] = useState(false)
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
@@ -119,9 +120,15 @@ export default function Dashboard() {
     .sort((a,b)=>daysLeft(a.fechaCorte)-daysLeft(b.fechaCorte))
     .filter(c=>{
       const d=daysLeft(c.fechaCorte)
-      if(filter==='semana')  return d>=0&&d<=7
-      if(filter==='urgente') return d>=0&&d<=3
-      if(filter==='activos') return d>=0
+      if(filter==='semana')  { if(!(d>=0&&d<=7))  return false }
+      if(filter==='urgente') { if(!(d>=0&&d<=3))  return false }
+      if(filter==='activos') { if(!(d>=0))         return false }
+      if(search.trim()) {
+        const q=search.toLowerCase()
+        const nombre=(c.nombre+' '+c.apellido).toLowerCase()
+        const tel=(c.telefono||'').toLowerCase()
+        if(!nombre.includes(q) && !tel.includes(q)) return false
+      }
       return true
     })
 
@@ -349,6 +356,26 @@ export default function Dashboard() {
         </form>
       )}
 
+      {/* BUSCADOR */}
+      <div style={{padding:'0 0 8px'}}>
+        <input
+          type="text"
+          placeholder="🔍 Buscar por nombre, apellido o teléfono..."
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          style={{
+            width:'100%', padding:'10px 14px', borderRadius:'8px',
+            border:'1px solid #333', background:'#1a1a1a', color:'#fff',
+            fontSize:'14px', boxSizing:'border-box', outline:'none'
+          }}
+        />
+        {search && (
+          <p style={{fontSize:'12px',color:'#888',marginTop:'4px'}}>
+            {filtered.length} resultado{filtered.length!==1?'s':''} para "{search}"
+          </p>
+        )}
+      </div>
+
       <div className={styles.filters}>
         {[
           {key:'todos',   label:`Todos (${clients.length})`},
@@ -367,7 +394,7 @@ export default function Dashboard() {
       <div className={styles.list}>
         {filtered.length===0 && (
           <div className={styles.empty}>
-            {clients.length===0?'Todavía no hay clientes. Agregá el primero.':'No hay clientes en este filtro.'}
+            {search ? `No se encontró "${search}".` : clients.length===0?'Todavía no hay clientes. Agregá el primero.':'No hay clientes en este filtro.'}
           </div>
         )}
         {filtered.map(c=>{
