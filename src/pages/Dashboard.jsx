@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   collection, addDoc, deleteDoc, doc,
-  onSnapshot, serverTimestamp, query, orderBy, updateDoc, arrayUnion
+  onSnapshot, serverTimestamp, query, orderBy, updateDoc, arrayUnion, where
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import {
@@ -14,7 +14,7 @@ const TODAY = () => { const d=new Date(); d.setHours(0,0,0,0); return d }
 function parseDate(str) {
   const [y,m,d]=str.split('-').map(Number); const dt=new Date(y,m-1,d); dt.setHours(0,0,0,0); return dt
 }
-function formatAR(str) { const [y,m,d]=str.split('-'); return `${d}/${m}/${y}` }
+function formatAR(str) { if(!str) return ''; const [y,m,d]=str.split('-'); return `${d}/${m}/${y}` }
 function selloExpiry(str) {
   if(!str) return ''
   const [y,m,d]=str.split('-').map(Number)
@@ -34,6 +34,20 @@ function getStatus(days) {
 }
 function initials(n,a) { return `${n?.[0]??''}${a?.[0]??''}`.toUpperCase() }
 const todayISO = new Date().toISOString().split('T')[0]
+
+function isoToLabel(iso) {
+  const d = parseDate(iso)
+  const hoy = new Date(); hoy.setHours(0,0,0,0)
+  const ayer = new Date(hoy); ayer.setDate(ayer.getDate()-1)
+  if(d.getTime()===hoy.getTime()) return 'Hoy'
+  if(d.getTime()===ayer.getTime()) return 'Ayer'
+  return d.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})
+}
+
+function addDays(iso, n) {
+  const d = parseDate(iso); d.setDate(d.getDate()+n)
+  return d.toISOString().split('T')[0]
+}
 
 function getMonthLabel(iso) {
   const [y,m]=iso.split('-')
@@ -120,8 +134,6 @@ function StatsPanel({ clients }) {
   const statsData = computeStats(clients)
   const currentMo = todayISO.slice(0,7)
   const curr = statsData.find(s=>s.mo===currentMo) || {cortes:0,ingresos:0,nuevos:0,recurrentes:0,pelo:0,pelo_barba:0}
-  const totalCortesHoy = curr.cortes
-  const totalIngresosHoy = curr.ingresos
   const totalPelo = clients.reduce((a,c)=>a+(c.servicio==='pelo_barba'?0:1),0)
   const totalPeloBarba = clients.reduce((a,c)=>a+(c.servicio==='pelo_barba'?1:0),0)
   const totalCortes = clients.reduce((a,c)=>a+(c.sellos?.length||1),0)
@@ -129,110 +141,196 @@ function StatsPanel({ clients }) {
     {name:'Solo pelo', value: totalPelo || 0},
     {name:'Pelo+barba', value: totalPeloBarba || 0},
   ]
-
-  const kpiStyle = {
-    background:'#1a1a1a', borderRadius:'12px', padding:'16px 20px',
-    display:'flex', flexDirection:'column', gap:'4px', flex:'1', minWidth:'140px'
-  }
-  const kpiNum = { fontSize:'28px', fontWeight:'bold', color:'#FF6B00', lineHeight:1 }
-  const kpiLabel = { fontSize:'12px', color:'#999' }
-
+  const kpiStyle = {background:'#1a1a1a',borderRadius:'12px',padding:'16px 20px',display:'flex',flexDirection:'column',gap:'4px',flex:'1',minWidth:'140px'}
+  const kpiNum = {fontSize:'28px',fontWeight:'bold',color:'#FF6B00',lineHeight:1}
+  const kpiLabel = {fontSize:'12px',color:'#999'}
   return (
-    <div style={{marginTop:'16px', display:'flex', flexDirection:'column', gap:'20px'}}>
-
-      {/* KPIs */}
-      <div style={{display:'flex', gap:'12px', flexWrap:'wrap'}}>
-        <div style={kpiStyle}>
-          <span style={kpiNum}>{totalCortesHoy}</span>
-          <span style={kpiLabel}>Cortes este mes</span>
-        </div>
-        <div style={kpiStyle}>
-          <span style={{...kpiNum, color:'#22c55e'}}>${(totalIngresosHoy/1000).toFixed(0)}K</span>
-          <span style={kpiLabel}>Ingresos este mes</span>
-        </div>
-        <div style={kpiStyle}>
-          <span style={{...kpiNum, color:'#3b82f6'}}>{totalCortes}</span>
-          <span style={kpiLabel}>Cortes totales</span>
-        </div>
-        <div style={kpiStyle}>
-          <span style={{...kpiNum, color:'#a855f7'}}>
-            {clients.length ? Math.round(totalPeloBarba/clients.length*100) : 0}%
-          </span>
-          <span style={kpiLabel}>Clientes con barba</span>
-        </div>
+    <div style={{marginTop:'16px',display:'flex',flexDirection:'column',gap:'20px'}}>
+      <div style={{display:'flex',gap:'12px',flexWrap:'wrap'}}>
+        <div style={kpiStyle}><span style={kpiNum}>{curr.cortes}</span><span style={kpiLabel}>Cortes este mes</span></div>
+        <div style={kpiStyle}><span style={{...kpiNum,color:'#22c55e'}}>${(curr.ingresos/1000).toFixed(0)}K</span><span style={kpiLabel}>Ingresos este mes</span></div>
+        <div style={kpiStyle}><span style={{...kpiNum,color:'#3b82f6'}}>{totalCortes}</span><span style={kpiLabel}>Cortes totales</span></div>
+        <div style={kpiStyle}><span style={{...kpiNum,color:'#a855f7'}}>{clients.length ? Math.round(totalPeloBarba/clients.length*100) : 0}%</span><span style={kpiLabel}>Clientes con barba</span></div>
       </div>
-
-      {/* Cortes por mes */}
-      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
-        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>✂️ Cortes por mes</p>
+      <div style={{background:'#1a1a1a',borderRadius:'12px',padding:'16px'}}>
+        <p style={{color:'#fff',fontWeight:'bold',marginBottom:'12px',fontSize:'14px'}}>✂️ Cortes por mes</p>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={statsData} margin={{top:4,right:8,left:-10,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
-            <YAxis tick={{fill:'#aaa', fontSize:11}} allowDecimals={false} />
+            <XAxis dataKey="label" tick={{fill:'#aaa',fontSize:11}} />
+            <YAxis tick={{fill:'#aaa',fontSize:11}} allowDecimals={false} />
             <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
             <Bar dataKey="cortes" fill="#FF6B00" radius={[4,4,0,0]} name="Cortes" />
           </BarChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Ingresos por mes */}
-      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
-        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>💰 Ingresos estimados por mes ($)</p>
+      <div style={{background:'#1a1a1a',borderRadius:'12px',padding:'16px'}}>
+        <p style={{color:'#fff',fontWeight:'bold',marginBottom:'12px',fontSize:'14px'}}>💰 Ingresos estimados por mes ($)</p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={statsData} margin={{top:4,right:8,left:0,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
-            <YAxis tick={{fill:'#aaa', fontSize:11}} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`} />
-            <Tooltip
-              contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}}
-              formatter={v=>[`$${v.toLocaleString('es-AR')}`, 'Ingresos']}
-            />
-            <Line type="monotone" dataKey="ingresos" stroke="#22c55e" strokeWidth={2.5}
-              dot={{fill:'#22c55e', r:4}} activeDot={{r:6}} name="Ingresos" />
+            <XAxis dataKey="label" tick={{fill:'#aaa',fontSize:11}} />
+            <YAxis tick={{fill:'#aaa',fontSize:11}} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`} />
+            <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} formatter={v=>[`$${v.toLocaleString('es-AR')}`,'Ingresos']} />
+            <Line type="monotone" dataKey="ingresos" stroke="#22c55e" strokeWidth={2.5} dot={{fill:'#22c55e',r:4}} activeDot={{r:6}} />
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Nuevos vs Recurrentes */}
-      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
-        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>👤 Nuevos vs Recurrentes por mes</p>
+      <div style={{background:'#1a1a1a',borderRadius:'12px',padding:'16px'}}>
+        <p style={{color:'#fff',fontWeight:'bold',marginBottom:'12px',fontSize:'14px'}}>👤 Nuevos vs Recurrentes por mes</p>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={statsData} margin={{top:4,right:8,left:-10,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
-            <YAxis tick={{fill:'#aaa', fontSize:11}} allowDecimals={false} />
+            <XAxis dataKey="label" tick={{fill:'#aaa',fontSize:11}} />
+            <YAxis tick={{fill:'#aaa',fontSize:11}} allowDecimals={false} />
             <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
-            <Legend wrapperStyle={{color:'#ccc', fontSize:12}} />
-            <Bar dataKey="nuevos" stackId="a" fill="#3b82f6" radius={[0,0,0,0]} name="Nuevos" />
+            <Legend wrapperStyle={{color:'#ccc',fontSize:12}} />
+            <Bar dataKey="nuevos" stackId="a" fill="#3b82f6" name="Nuevos" />
             <Bar dataKey="recurrentes" stackId="a" fill="#FF6B00" radius={[4,4,0,0]} name="Recurrentes" />
           </BarChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Pelo vs Pelo+barba */}
-      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px', display:'flex', gap:'16px', alignItems:'center', flexWrap:'wrap'}}>
-        <div style={{flex:1, minWidth:'160px'}}>
-          <p style={{color:'#fff', fontWeight:'bold', marginBottom:'4px', fontSize:'14px'}}>💈 Tipo de servicio</p>
-          <p style={{color:'#999', fontSize:'12px', marginBottom:'12px'}}>Del total de clientes registrados</p>
-          <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
-            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-              <div style={{width:12, height:12, borderRadius:3, background:'#FF6B00'}}/>
-              <span style={{color:'#ccc', fontSize:'13px'}}>Solo pelo: <strong style={{color:'#FF6B00'}}>{totalPelo}</strong></span>
+      <div style={{background:'#1a1a1a',borderRadius:'12px',padding:'16px',display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{flex:1,minWidth:'160px'}}>
+          <p style={{color:'#fff',fontWeight:'bold',marginBottom:'4px',fontSize:'14px'}}>💈 Tipo de servicio</p>
+          <p style={{color:'#999',fontSize:'12px',marginBottom:'12px'}}>Del total de clientes</p>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              <div style={{width:12,height:12,borderRadius:3,background:'#FF6B00'}}/>
+              <span style={{color:'#ccc',fontSize:'13px'}}>Solo pelo: <strong style={{color:'#FF6B00'}}>{totalPelo}</strong></span>
             </div>
-            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-              <div style={{width:12, height:12, borderRadius:3, background:'#3b82f6'}}/>
-              <span style={{color:'#ccc', fontSize:'13px'}}>Pelo + barba: <strong style={{color:'#3b82f6'}}>{totalPeloBarba}</strong></span>
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              <div style={{width:12,height:12,borderRadius:3,background:'#3b82f6'}}/>
+              <span style={{color:'#ccc',fontSize:'13px'}}>Pelo + barba: <strong style={{color:'#3b82f6'}}>{totalPeloBarba}</strong></span>
             </div>
           </div>
         </div>
         <PieChart width={140} height={140}>
-          <Pie data={pieData} cx={65} cy={65} innerRadius={35} outerRadius={60}
-            dataKey="value" paddingAngle={3}>
-            {pieData.map((_, i) => <Cell key={i} fill={COLORS_PIE[i]} />)}
+          <Pie data={pieData} cx={65} cy={65} innerRadius={35} outerRadius={60} dataKey="value" paddingAngle={3}>
+            {pieData.map((_,i)=><Cell key={i} fill={COLORS_PIE[i]} />)}
           </Pie>
           <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
         </PieChart>
+      </div>
+    </div>
+  )
+}
+
+function DayPanel({ clients, ventas, onAddVenta, onDeleteVenta }) {
+  const [selectedDay, setSelectedDay] = useState(todayISO)
+  const [descForm, setDescForm] = useState('')
+  const [montoForm, setMontoForm] = useState('')
+  const [savingV, setSavingV] = useState(false)
+
+  const cortesDelDia = clients.filter(c =>
+    c.sellos?.includes(selectedDay) || (!c.sellos?.length && c.fechaCorte === selectedDay)
+  )
+  const ventasDelDia = ventas.filter(v => v.fecha === selectedDay)
+
+  const totalCortes = cortesDelDia.reduce((a,c) => a + (c.servicio==='pelo_barba' ? 17000 : 12000), 0)
+  const totalVentas = ventasDelDia.reduce((a,v) => a + (v.monto||0), 0)
+  const totalDia = totalCortes + totalVentas
+
+  async function handleAddVenta(e) {
+    e.preventDefault()
+    if(!descForm.trim() || !montoForm) return
+    setSavingV(true)
+    await onAddVenta({ fecha: selectedDay, descripcion: descForm.trim(), monto: parseInt(montoForm) })
+    setDescForm(''); setMontoForm('')
+    setSavingV(false)
+  }
+
+  const box = { background:'#1a1a1a', borderRadius:'12px', padding:'16px', marginBottom:'0' }
+
+  return (
+    <div style={{marginTop:'16px', display:'flex', flexDirection:'column', gap:'16px'}}>
+
+      {/* Navegación de día */}
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', background:'#1a1a1a', borderRadius:'12px', padding:'12px 16px'}}>
+        <button onClick={()=>setSelectedDay(d=>addDays(d,-1))}
+          style={{background:'#333',border:'none',color:'#fff',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',fontSize:'18px'}}>←</button>
+        <div style={{textAlign:'center'}}>
+          <p style={{color:'#FF6B00',fontWeight:'bold',fontSize:'18px',margin:0}}>{isoToLabel(selectedDay)}</p>
+          <p style={{color:'#888',fontSize:'12px',margin:0}}>{formatAR(selectedDay)}</p>
+        </div>
+        <button onClick={()=>setSelectedDay(d=>addDays(d,1))} disabled={selectedDay>=todayISO}
+          style={{background: selectedDay>=todayISO ?'#222':'#333',border:'none',color: selectedDay>=todayISO ?'#555':'#fff',borderRadius:'8px',padding:'6px 14px',cursor: selectedDay>=todayISO ?'default':'pointer',fontSize:'18px'}}>→</button>
+      </div>
+
+      {/* Resumen del día */}
+      <div style={{display:'flex', gap:'12px', flexWrap:'wrap'}}>
+        <div style={{...box, flex:1, minWidth:'130px'}}>
+          <p style={{color:'#FF6B00',fontWeight:'bold',fontSize:'22px',margin:'0 0 2px'}}>{cortesDelDia.length}</p>
+          <p style={{color:'#999',fontSize:'12px',margin:0}}>Cortes</p>
+          <p style={{color:'#FF6B00',fontSize:'13px',margin:'4px 0 0'}}>${totalCortes.toLocaleString('es-AR')}</p>
+        </div>
+        <div style={{...box, flex:1, minWidth:'130px'}}>
+          <p style={{color:'#3b82f6',fontWeight:'bold',fontSize:'22px',margin:'0 0 2px'}}>{ventasDelDia.length}</p>
+          <p style={{color:'#999',fontSize:'12px',margin:0}}>Productos</p>
+          <p style={{color:'#3b82f6',fontSize:'13px',margin:'4px 0 0'}}>${totalVentas.toLocaleString('es-AR')}</p>
+        </div>
+        <div style={{...box, flex:1, minWidth:'130px', border:'1px solid #22c55e33'}}>
+          <p style={{color:'#22c55e',fontWeight:'bold',fontSize:'22px',margin:'0 0 2px'}}>${(totalDia/1000).toFixed(0)}K</p>
+          <p style={{color:'#999',fontSize:'12px',margin:0}}>Total del día</p>
+          <p style={{color:'#22c55e',fontSize:'13px',margin:'4px 0 0'}}>${totalDia.toLocaleString('es-AR')}</p>
+        </div>
+      </div>
+
+      {/* Cortes del día */}
+      <div style={box}>
+        <p style={{color:'#fff',fontWeight:'bold',fontSize:'14px',marginBottom:'12px'}}>✂️ Clientes atendidos</p>
+        {cortesDelDia.length === 0
+          ? <p style={{color:'#666',fontSize:'13px',margin:0}}>Sin cortes registrados este día.</p>
+          : cortesDelDia.map(c => (
+            <div key={c.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid #2a2a2a'}}>
+              <div style={{width:34,height:34,borderRadius:'50%',background:'#FF6B00',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'bold',fontSize:'13px',color:'#fff',flexShrink:0}}>
+                {(c.nombre?.[0]??'')+(c.apellido?.[0]??'')}
+              </div>
+              <div style={{flex:1}}>
+                <p style={{margin:0,fontWeight:'bold',fontSize:'14px',color:'#fff'}}>{c.nombre} {c.apellido}</p>
+                <p style={{margin:0,fontSize:'12px',color:'#999'}}>{c.servicio==='pelo_barba'?'✂️🧔 Pelo + barba':'✂️ Solo pelo'}</p>
+              </div>
+              <span style={{color:'#FF6B00',fontWeight:'bold',fontSize:'13px'}}>
+                ${(c.servicio==='pelo_barba'?17000:12000).toLocaleString('es-AR')}
+              </span>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Productos del día */}
+      <div style={box}>
+        <p style={{color:'#fff',fontWeight:'bold',fontSize:'14px',marginBottom:'12px'}}>🧴 Productos vendidos</p>
+        {ventasDelDia.length === 0
+          ? <p style={{color:'#666',fontSize:'13px',marginBottom:'12px'}}>Sin productos registrados.</p>
+          : ventasDelDia.map(v => (
+            <div key={v.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid #2a2a2a'}}>
+              <div style={{flex:1}}>
+                <p style={{margin:0,fontSize:'14px',color:'#fff'}}>{v.descripcion}</p>
+              </div>
+              <span style={{color:'#3b82f6',fontWeight:'bold',fontSize:'13px'}}>${(v.monto||0).toLocaleString('es-AR')}</span>
+              <button onClick={()=>onDeleteVenta(v.id)}
+                style={{background:'none',border:'none',color:'#666',cursor:'pointer',fontSize:'16px',padding:'0 4px'}}>🗑</button>
+            </div>
+          ))
+        }
+        {/* Formulario agregar producto */}
+        <form onSubmit={handleAddVenta} style={{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}}>
+          <input
+            placeholder="Descripción (ej: Cera)"
+            value={descForm} onChange={e=>setDescForm(e.target.value)}
+            style={{flex:2,minWidth:'120px',padding:'8px 12px',borderRadius:'8px',border:'1px solid #333',background:'#111',color:'#fff',fontSize:'13px'}}
+          />
+          <input
+            type="number" placeholder="Monto $"
+            value={montoForm} onChange={e=>setMontoForm(e.target.value)}
+            style={{flex:1,minWidth:'90px',padding:'8px 12px',borderRadius:'8px',border:'1px solid #333',background:'#111',color:'#fff',fontSize:'13px'}}
+          />
+          <button type="submit" disabled={savingV}
+            style={{padding:'8px 16px',borderRadius:'8px',background:'#3b82f6',color:'#fff',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'13px'}}>
+            {savingV?'...':'+ Agregar'}
+          </button>
+        </form>
       </div>
 
     </div>
@@ -241,11 +339,13 @@ function StatsPanel({ clients }) {
 
 export default function Dashboard() {
   const [clients,setClients]   = useState([])
+  const [ventas,setVentas]     = useState([])
   const [loading,setLoading]   = useState(true)
   const [filter,setFilter]     = useState('todos')
   const [search,setSearch]     = useState('')
   const [showForm,setShowForm] = useState(false)
   const [showStats,setShowStats] = useState(false)
+  const [showDay,setShowDay]   = useState(false)
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
   const [cardId,setCardId]     = useState(null)
@@ -256,10 +356,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     const q=query(collection(db,'clientes'),orderBy('createdAt','desc'))
-    return onSnapshot(q, snap => {
+    const unsub1 = onSnapshot(q, snap => {
       setClients(snap.docs.map(d=>({id:d.id,...d.data()})))
       setLoading(false)
     })
+    const q2=query(collection(db,'ventas'),orderBy('createdAt','desc'))
+    const unsub2 = onSnapshot(q2, snap => {
+      setVentas(snap.docs.map(d=>({id:d.id,...d.data()})))
+    })
+    return () => { unsub1(); unsub2() }
   },[])
 
   const cardClient = cardId ? clients.find(c=>c.id===cardId) : null
@@ -344,6 +449,16 @@ export default function Dashboard() {
     finally{ setSaving(false) }
   }
 
+  async function handleAddVenta(data) {
+    try{ await addDoc(collection(db,'ventas'),{...data, createdAt:serverTimestamp()}) }
+    catch(err){ alert('Error: '+err.message) }
+  }
+
+  async function handleDeleteVenta(id) {
+    try{ await deleteDoc(doc(db,'ventas',id)) }
+    catch(err){ alert('Error: '+err.message) }
+  }
+
   function handleDownload() {
     if(!canvasRef.current||!cardClient) return
     const a=document.createElement('a')
@@ -358,7 +473,6 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
 
-      {/* Modal tarjeta */}
       {cardClient && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:1000,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -371,7 +485,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Modal editar */}
       {editing && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -424,16 +537,19 @@ export default function Dashboard() {
           <p className={styles.subtitle}>{todayLabel}</p>
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap',justifyContent:'flex-end'}}>
-          <button className={styles.btnSecondary} onClick={()=>{setShowStats(v=>!v); setShowForm(false)}}>
-            {showStats ? '✕ Stats' : '📊 Estadísticas'}
+          <button className={styles.btnSecondary} onClick={()=>{setShowDay(v=>!v);setShowStats(false);setShowForm(false)}}>
+            {showDay?'✕ Día':'📅 Día'}
           </button>
-          <button className={styles.btnPrimary} onClick={()=>{setShowForm(v=>!v); setShowStats(false)}}>
+          <button className={styles.btnSecondary} onClick={()=>{setShowStats(v=>!v);setShowDay(false);setShowForm(false)}}>
+            {showStats?'✕ Stats':'📊 Stats'}
+          </button>
+          <button className={styles.btnPrimary} onClick={()=>{setShowForm(v=>!v);setShowStats(false);setShowDay(false)}}>
             {showForm?'Cancelar':'+ Agregar'}
           </button>
         </div>
       </header>
 
-      {/* Panel de estadísticas */}
+      {showDay && <DayPanel clients={clients} ventas={ventas} onAddVenta={handleAddVenta} onDeleteVenta={handleDeleteVenta} />}
       {showStats && <StatsPanel clients={clients} />}
 
       <div className={styles.stats}>
@@ -486,8 +602,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <input
-        type="text" placeholder="🔍 Buscar por nombre o teléfono..."
+      <input type="text" placeholder="🔍 Buscar por nombre o teléfono..."
         value={search} onChange={e=>setSearch(e.target.value)}
         style={{width:'100%',padding:'10px 14px',borderRadius:'8px',border:'1px solid #333',
           background:'#1a1a1a',color:'#fff',fontSize:'14px',boxSizing:'border-box',marginBottom:'8px'}}
