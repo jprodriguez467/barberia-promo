@@ -4,6 +4,10 @@ import {
   onSnapshot, serverTimestamp, query, orderBy, updateDoc, arrayUnion
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell
+} from 'recharts'
 import styles from './Dashboard.module.css'
 
 const TODAY = () => { const d=new Date(); d.setHours(0,0,0,0); return d }
@@ -31,24 +35,49 @@ function getStatus(days) {
 function initials(n,a) { return `${n?.[0]??''}${a?.[0]??''}`.toUpperCase() }
 const todayISO = new Date().toISOString().split('T')[0]
 
+function getMonthLabel(iso) {
+  const [y,m]=iso.split('-')
+  const names=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  return `${names[parseInt(m)-1]} ${y.slice(2)}`
+}
+
+function computeStats(clients) {
+  const map = {}
+  clients.forEach(c => {
+    const sellos = c.sellos?.length ? [...c.sellos].sort() : [c.fechaCorte]
+    const firstMonth = sellos[0].slice(0,7)
+    const precio = c.servicio === 'pelo_barba' ? 17000 : 12000
+    sellos.forEach(s => {
+      const mo = s.slice(0,7)
+      if(!map[mo]) map[mo] = {cortes:0, ingresos:0, nuevos:0, recurrentes:0, pelo:0, pelo_barba:0}
+      map[mo].cortes++
+      map[mo].ingresos += precio
+      if(mo===firstMonth) map[mo].nuevos++
+      else map[mo].recurrentes++
+      if(c.servicio==='pelo_barba') map[mo].pelo_barba++
+      else map[mo].pelo++
+    })
+  })
+  const sorted = Object.keys(map).sort()
+  const last6 = sorted.slice(-6)
+  return last6.map(mo => ({ mo, label: getMonthLabel(mo), ...map[mo] }))
+}
+
 function drawLoyaltyCard(canvas, client) {
   const ctx=canvas.getContext('2d'), W=canvas.width, H=canvas.height
   const sellos = client.sellos?.length ? [...client.sellos].sort() : [client.fechaCorte]
   const precio = client.servicio==='pelo_barba' ? '$17.000' : '$12.000'
   const servNombre = client.servicio==='pelo_barba' ? 'Pelo y barba' : 'Corte de pelo'
-
   ctx.fillStyle='#111'; ctx.fillRect(0,0,W,H)
   ctx.save(); ctx.strokeStyle='rgba(200,70,0,0.22)'; ctx.lineWidth=28
   for(let x=-H; x<W+H; x+=70){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+H,H); ctx.stroke() }
   ctx.restore()
-
   ctx.fillStyle='#fff'; ctx.font='bold 25px Arial'; ctx.textAlign='center'
   ctx.fillText('Llenà esta tarjeta y GANA un corte GRATIS', W/2, 40)
   ctx.fillStyle='#bbb'; ctx.font='13px Arial'
   ctx.fillText('Regresá dentro de los 15 días de tu último corte para sellar.', W/2, 62)
   ctx.fillStyle='#FF6B00'; ctx.font='bold 16px Arial'
   ctx.fillText(`${client.nombre} ${client.apellido}`.toUpperCase(), W/2, 86)
-
   const R=50, rowY=[163,298], xs=[78,234,390,546,702]
   for(let i=0; i<10; i++){
     const cx=xs[i%5], cy=rowY[Math.floor(i/5)]
@@ -85,20 +114,144 @@ function drawLoyaltyCard(canvas, client) {
   ctx.textAlign='center'; ctx.fillText(servNombre,W/2,H-14)
 }
 
+const COLORS_PIE = ['#FF6B00','#3b82f6']
+
+function StatsPanel({ clients }) {
+  const statsData = computeStats(clients)
+  const currentMo = todayISO.slice(0,7)
+  const curr = statsData.find(s=>s.mo===currentMo) || {cortes:0,ingresos:0,nuevos:0,recurrentes:0,pelo:0,pelo_barba:0}
+  const totalCortesHoy = curr.cortes
+  const totalIngresosHoy = curr.ingresos
+  const totalPelo = clients.reduce((a,c)=>a+(c.servicio==='pelo_barba'?0:1),0)
+  const totalPeloBarba = clients.reduce((a,c)=>a+(c.servicio==='pelo_barba'?1:0),0)
+  const totalCortes = clients.reduce((a,c)=>a+(c.sellos?.length||1),0)
+  const pieData = [
+    {name:'Solo pelo', value: totalPelo || 0},
+    {name:'Pelo+barba', value: totalPeloBarba || 0},
+  ]
+
+  const kpiStyle = {
+    background:'#1a1a1a', borderRadius:'12px', padding:'16px 20px',
+    display:'flex', flexDirection:'column', gap:'4px', flex:'1', minWidth:'140px'
+  }
+  const kpiNum = { fontSize:'28px', fontWeight:'bold', color:'#FF6B00', lineHeight:1 }
+  const kpiLabel = { fontSize:'12px', color:'#999' }
+
+  return (
+    <div style={{marginTop:'16px', display:'flex', flexDirection:'column', gap:'20px'}}>
+
+      {/* KPIs */}
+      <div style={{display:'flex', gap:'12px', flexWrap:'wrap'}}>
+        <div style={kpiStyle}>
+          <span style={kpiNum}>{totalCortesHoy}</span>
+          <span style={kpiLabel}>Cortes este mes</span>
+        </div>
+        <div style={kpiStyle}>
+          <span style={{...kpiNum, color:'#22c55e'}}>${(totalIngresosHoy/1000).toFixed(0)}K</span>
+          <span style={kpiLabel}>Ingresos este mes</span>
+        </div>
+        <div style={kpiStyle}>
+          <span style={{...kpiNum, color:'#3b82f6'}}>{totalCortes}</span>
+          <span style={kpiLabel}>Cortes totales</span>
+        </div>
+        <div style={kpiStyle}>
+          <span style={{...kpiNum, color:'#a855f7'}}>
+            {clients.length ? Math.round(totalPeloBarba/clients.length*100) : 0}%
+          </span>
+          <span style={kpiLabel}>Clientes con barba</span>
+        </div>
+      </div>
+
+      {/* Cortes por mes */}
+      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
+        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>✂️ Cortes por mes</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={statsData} margin={{top:4,right:8,left:-10,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
+            <YAxis tick={{fill:'#aaa', fontSize:11}} allowDecimals={false} />
+            <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
+            <Bar dataKey="cortes" fill="#FF6B00" radius={[4,4,0,0]} name="Cortes" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Ingresos por mes */}
+      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
+        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>💰 Ingresos estimados por mes ($)</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={statsData} margin={{top:4,right:8,left:0,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
+            <YAxis tick={{fill:'#aaa', fontSize:11}} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`} />
+            <Tooltip
+              contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}}
+              formatter={v=>[`$${v.toLocaleString('es-AR')}`, 'Ingresos']}
+            />
+            <Line type="monotone" dataKey="ingresos" stroke="#22c55e" strokeWidth={2.5}
+              dot={{fill:'#22c55e', r:4}} activeDot={{r:6}} name="Ingresos" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Nuevos vs Recurrentes */}
+      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px'}}>
+        <p style={{color:'#fff', fontWeight:'bold', marginBottom:'12px', fontSize:'14px'}}>👤 Nuevos vs Recurrentes por mes</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={statsData} margin={{top:4,right:8,left:-10,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="label" tick={{fill:'#aaa', fontSize:11}} />
+            <YAxis tick={{fill:'#aaa', fontSize:11}} allowDecimals={false} />
+            <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
+            <Legend wrapperStyle={{color:'#ccc', fontSize:12}} />
+            <Bar dataKey="nuevos" stackId="a" fill="#3b82f6" radius={[0,0,0,0]} name="Nuevos" />
+            <Bar dataKey="recurrentes" stackId="a" fill="#FF6B00" radius={[4,4,0,0]} name="Recurrentes" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Pelo vs Pelo+barba */}
+      <div style={{background:'#1a1a1a', borderRadius:'12px', padding:'16px', display:'flex', gap:'16px', alignItems:'center', flexWrap:'wrap'}}>
+        <div style={{flex:1, minWidth:'160px'}}>
+          <p style={{color:'#fff', fontWeight:'bold', marginBottom:'4px', fontSize:'14px'}}>💈 Tipo de servicio</p>
+          <p style={{color:'#999', fontSize:'12px', marginBottom:'12px'}}>Del total de clientes registrados</p>
+          <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+              <div style={{width:12, height:12, borderRadius:3, background:'#FF6B00'}}/>
+              <span style={{color:'#ccc', fontSize:'13px'}}>Solo pelo: <strong style={{color:'#FF6B00'}}>{totalPelo}</strong></span>
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+              <div style={{width:12, height:12, borderRadius:3, background:'#3b82f6'}}/>
+              <span style={{color:'#ccc', fontSize:'13px'}}>Pelo + barba: <strong style={{color:'#3b82f6'}}>{totalPeloBarba}</strong></span>
+            </div>
+          </div>
+        </div>
+        <PieChart width={140} height={140}>
+          <Pie data={pieData} cx={65} cy={65} innerRadius={35} outerRadius={60}
+            dataKey="value" paddingAngle={3}>
+            {pieData.map((_, i) => <Cell key={i} fill={COLORS_PIE[i]} />)}
+          </Pie>
+          <Tooltip contentStyle={{background:'#222',border:'1px solid #444',color:'#fff'}} />
+        </PieChart>
+      </div>
+
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [clients,setClients]   = useState([])
   const [loading,setLoading]   = useState(true)
   const [filter,setFilter]     = useState('todos')
   const [search,setSearch]     = useState('')
   const [showForm,setShowForm] = useState(false)
+  const [showStats,setShowStats] = useState(false)
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
   const [cardId,setCardId]     = useState(null)
   const [editing,setEditing]   = useState(null)
   const [editForm,setEditForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
-  const [selloModal,setSelloModal] = useState(null) // cliente al que se le agrega sello
-  const [selloFecha,setSelloFecha] = useState(todayISO)
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -110,9 +263,10 @@ export default function Dashboard() {
   },[])
 
   const cardClient = cardId ? clients.find(c=>c.id===cardId) : null
- useEffect(() => {
-  if(cardClient && canvasRef.current) drawLoyaltyCard(canvasRef.current, cardClient)
-},[JSON.stringify(cardClient)])
+  useEffect(() => {
+    if(cardClient && canvasRef.current) drawLoyaltyCard(canvasRef.current, cardClient)
+  },[cardClient])
+
   const urgente = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=3}).length
   const semana  = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=7}).length
   const activos = clients.filter(c=>daysLeft(c.fechaCorte)>=0).length
@@ -121,9 +275,9 @@ export default function Dashboard() {
     .sort((a,b)=>daysLeft(a.fechaCorte)-daysLeft(b.fechaCorte))
     .filter(c=>{
       const d=daysLeft(c.fechaCorte)
-      if(filter==='semana')  { if(!(d>=0&&d<=7))  return false }
-      if(filter==='urgente') { if(!(d>=0&&d<=3))  return false }
-      if(filter==='activos') { if(!(d>=0))         return false }
+      if(filter==='semana')  { if(!(d>=0&&d<=7)) return false }
+      if(filter==='urgente') { if(!(d>=0&&d<=3)) return false }
+      if(filter==='activos') { if(!(d>=0)) return false }
       if(search.trim()) {
         const q=search.toLowerCase()
         const nombre=(c.nombre+' '+c.apellido).toLowerCase()
@@ -156,21 +310,12 @@ export default function Dashboard() {
     finally{ setDeleting(null) }
   }
 
-  function openSelloModal(c) {
+  async function handleAddSello(c) {
     const sel = c.sellos?.length ? c.sellos : [c.fechaCorte]
     if(sel.length>=10){ alert('¡Tarjeta completa! El cliente ganó un corte gratis 🏆'); return }
-    setSelloModal(c)
-    setSelloFecha(todayISO)
-  }
-
-  async function confirmSello() {
-    if(!selloModal||!selloFecha) return
-    setSaving(true)
     try{
-      await updateDoc(doc(db,'clientes',selloModal.id),{ sellos:arrayUnion(selloFecha), fechaCorte:selloFecha })
-      setSelloModal(null)
+      await updateDoc(doc(db,'clientes',c.id),{ sellos:arrayUnion(todayISO), fechaCorte:todayISO })
     } catch(err){ alert('Error: '+err.message) }
-    finally{ setSaving(false) }
   }
 
   async function handleRemoveLastSello(clientId, sellos) {
@@ -183,24 +328,16 @@ export default function Dashboard() {
   }
 
   function openEdit(c) {
-    setEditForm({
-      nombre:c.nombre, apellido:c.apellido,
-      telefono:c.telefono||'', fechaCorte:c.fechaCorte,
-      servicio:c.servicio||'pelo'
-    })
+    setEditForm({ nombre:c.nombre, apellido:c.apellido, telefono:c.telefono||'', fechaCorte:c.fechaCorte, servicio:c.servicio||'pelo' })
     setEditing(c.id)
   }
 
   async function handleEditSave(e) {
-    e.preventDefault()
-    setSaving(true)
+    e.preventDefault(); setSaving(true)
     try {
       await updateDoc(doc(db,'clientes',editing),{
-        nombre:editForm.nombre.trim(),
-        apellido:editForm.apellido.trim(),
-        telefono:editForm.telefono.trim(),
-        fechaCorte:editForm.fechaCorte,
-        servicio:editForm.servicio,
+        nombre:editForm.nombre.trim(), apellido:editForm.apellido.trim(),
+        telefono:editForm.telefono.trim(), fechaCorte:editForm.fechaCorte, servicio:editForm.servicio,
       })
       setEditing(null)
     } catch(err){ alert('Error: '+err.message) }
@@ -234,82 +371,38 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Modal agregar sello con fecha */}
-      {selloModal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
-          display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'360px',display:'flex',flexDirection:'column',gap:'16px'}}>
-            <h2 style={{margin:0,fontSize:'18px'}}>✂️ Agregar corte</h2>
-            <p style={{margin:0,fontSize:'14px',color:'#555'}}>
-              Cliente: <strong>{selloModal.nombre} {selloModal.apellido}</strong>
-            </p>
-            <div className={styles.field}>
-              <label>Fecha del corte</label>
-              <input type="date" value={selloFecha}
-                onChange={e=>setSelloFecha(e.target.value)} />
-            </div>
-            <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
-              <button className={styles.btnSecondary} onClick={()=>setSelloModal(null)}>Cancelar</button>
-              <button className={styles.btnPrimary} onClick={confirmSello} disabled={saving}>
-                {saving?'Guardando...':'✅ Confirmar sello'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal editar */}
       {editing && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
           <form onSubmit={handleEditSave}
-            style={{background:'#fff',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'480px',display:'flex',flexDirection:'column',gap:'12px'}}>
+            style={{background:'#fff',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'480px',display:'flex',flexDirection:'column',gap:'12px',maxHeight:'90vh',overflowY:'auto'}}>
             <h2 style={{margin:0,fontSize:'18px'}}>✏️ Editar cliente</h2>
             <div className={styles.formGrid}>
-              <div className={styles.field}>
-                <label>Nombre</label>
-                <input type="text" value={editForm.nombre} required
-                  onChange={e=>setEditForm(f=>({...f,nombre:e.target.value}))} />
-              </div>
-              <div className={styles.field}>
-                <label>Apellido</label>
-                <input type="text" value={editForm.apellido} required
-                  onChange={e=>setEditForm(f=>({...f,apellido:e.target.value}))} />
-              </div>
-              <div className={styles.field}>
-                <label>Teléfono</label>
-                <input type="tel" value={editForm.telefono}
-                  onChange={e=>setEditForm(f=>({...f,telefono:e.target.value}))} />
-              </div>
-              <div className={styles.field}>
-                <label>Servicio</label>
+              <div className={styles.field}><label>Nombre</label>
+                <input type="text" value={editForm.nombre} required onChange={e=>setEditForm(f=>({...f,nombre:e.target.value}))} /></div>
+              <div className={styles.field}><label>Apellido</label>
+                <input type="text" value={editForm.apellido} required onChange={e=>setEditForm(f=>({...f,apellido:e.target.value}))} /></div>
+              <div className={styles.field}><label>Teléfono</label>
+                <input type="tel" value={editForm.telefono} onChange={e=>setEditForm(f=>({...f,telefono:e.target.value}))} /></div>
+              <div className={styles.field}><label>Servicio</label>
                 <select value={editForm.servicio} onChange={e=>setEditForm(f=>({...f,servicio:e.target.value}))}>
                   <option value="pelo">✂️ Corte de pelo — $12.000</option>
                   <option value="pelo_barba">✂️🧔 Pelo y barba — $17.000</option>
-                </select>
-              </div>
-              <div className={styles.field}>
-                <label>Fecha último corte</label>
-                <input type="date" value={editForm.fechaCorte} required
-                  onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} />
-              </div>
+                </select></div>
+              <div className={styles.field}><label>Fecha último corte</label>
+                <input type="date" value={editForm.fechaCorte} required onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} /></div>
             </div>
-
             {editingClient && (()=>{
               const sellos = editingClient.sellos?.length ? [...editingClient.sellos].sort() : [editingClient.fechaCorte]
               return (
                 <div style={{borderTop:'1px solid #eee',paddingTop:'12px'}}>
                   <p style={{margin:'0 0 8px',fontWeight:'bold',fontSize:'14px'}}>🎫 Sellos ({sellos.length}/10)</p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}}>
-                    {sellos.map((s,i)=>(
-                      <span key={i} style={{background:'#f0f0f0',borderRadius:'6px',padding:'3px 8px',fontSize:'12px'}}>
-                        {i+1}. {formatAR(s)}
-                      </span>
-                    ))}
+                    {sellos.map((s,i)=>(<span key={i} style={{background:'#f0f0f0',borderRadius:'6px',padding:'3px 8px',fontSize:'12px'}}>{i+1}. {formatAR(s)}</span>))}
                   </div>
                   {sellos.length>1 && (
-                    <button type="button" className={styles.btnDanger}
-                      style={{fontSize:'13px',padding:'6px 12px'}}
+                    <button type="button" className={styles.btnDanger} style={{fontSize:'13px',padding:'6px 12px'}}
                       onClick={()=>handleRemoveLastSello(editing, sellos)}>
                       🗑 Borrar último sello ({formatAR(sellos[sellos.length-1])})
                     </button>
@@ -317,12 +410,9 @@ export default function Dashboard() {
                 </div>
               )
             })()}
-
             <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
               <button type="button" className={styles.btnSecondary} onClick={()=>setEditing(null)}>Cancelar</button>
-              <button type="submit" className={styles.btnPrimary} disabled={saving}>
-                {saving?'Guardando...':'Guardar cambios'}
-              </button>
+              <button type="submit" className={styles.btnPrimary} disabled={saving}>{saving?'Guardando...':'Guardar cambios'}</button>
             </div>
           </form>
         </div>
@@ -333,10 +423,18 @@ export default function Dashboard() {
           <h1 className={styles.title}>✂️ Promo Barbería</h1>
           <p className={styles.subtitle}>{todayLabel}</p>
         </div>
-        <button className={styles.btnPrimary} onClick={()=>setShowForm(v=>!v)}>
-          {showForm?'Cancelar':'+ Agregar cliente'}
-        </button>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',justifyContent:'flex-end'}}>
+          <button className={styles.btnSecondary} onClick={()=>{setShowStats(v=>!v); setShowForm(false)}}>
+            {showStats ? '✕ Stats' : '📊 Estadísticas'}
+          </button>
+          <button className={styles.btnPrimary} onClick={()=>{setShowForm(v=>!v); setShowStats(false)}}>
+            {showForm?'Cancelar':'+ Agregar'}
+          </button>
+        </div>
       </header>
+
+      {/* Panel de estadísticas */}
+      {showStats && <StatsPanel clients={clients} />}
 
       <div className={styles.stats}>
         <div className={styles.statCard}>
@@ -356,61 +454,25 @@ export default function Dashboard() {
       {showForm && (
         <form className={styles.form} onSubmit={handleAdd}>
           <div className={styles.formGrid}>
-            <div className={styles.field}>
-              <label>Nombre</label>
-              <input type="text" placeholder="Juan" value={form.nombre} required
-                onChange={e=>setForm(f=>({...f,nombre:e.target.value}))} />
-            </div>
-            <div className={styles.field}>
-              <label>Apellido</label>
-              <input type="text" placeholder="García" value={form.apellido} required
-                onChange={e=>setForm(f=>({...f,apellido:e.target.value}))} />
-            </div>
-            <div className={styles.field}>
-              <label>Teléfono (opcional)</label>
-              <input type="tel" placeholder="342 555-0000" value={form.telefono}
-                onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} />
-            </div>
-            <div className={styles.field}>
-              <label>Servicio</label>
+            <div className={styles.field}><label>Nombre</label>
+              <input type="text" placeholder="Juan" value={form.nombre} required onChange={e=>setForm(f=>({...f,nombre:e.target.value}))} /></div>
+            <div className={styles.field}><label>Apellido</label>
+              <input type="text" placeholder="García" value={form.apellido} required onChange={e=>setForm(f=>({...f,apellido:e.target.value}))} /></div>
+            <div className={styles.field}><label>Teléfono (opcional)</label>
+              <input type="tel" placeholder="342 555-0000" value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} /></div>
+            <div className={styles.field}><label>Servicio</label>
               <select value={form.servicio} onChange={e=>setForm(f=>({...f,servicio:e.target.value}))}>
                 <option value="pelo">✂️ Corte de pelo — $12.000</option>
                 <option value="pelo_barba">✂️🧔 Pelo y barba — $17.000</option>
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label>Fecha del último corte</label>
-              <input type="date" value={form.fechaCorte} required
-                onChange={e=>setForm(f=>({...f,fechaCorte:e.target.value}))} />
-            </div>
+              </select></div>
+            <div className={styles.field}><label>Fecha del último corte</label>
+              <input type="date" value={form.fechaCorte} required onChange={e=>setForm(f=>({...f,fechaCorte:e.target.value}))} /></div>
           </div>
           <div className={styles.formActions}>
-            <button type="submit" className={styles.btnPrimary} disabled={saving}>
-              {saving?'Guardando...':'Guardar cliente'}
-            </button>
+            <button type="submit" className={styles.btnPrimary} disabled={saving}>{saving?'Guardando...':'Guardar cliente'}</button>
           </div>
         </form>
       )}
-
-      {/* BUSCADOR */}
-      <div style={{padding:'0 0 8px'}}>
-        <input
-          type="text"
-          placeholder="🔍 Buscar por nombre, apellido o teléfono..."
-          value={search}
-          onChange={e=>setSearch(e.target.value)}
-          style={{
-            width:'100%', padding:'10px 14px', borderRadius:'8px',
-            border:'1px solid #333', background:'#1a1a1a', color:'#fff',
-            fontSize:'14px', boxSizing:'border-box', outline:'none'
-          }}
-        />
-        {search && (
-          <p style={{fontSize:'12px',color:'#888',marginTop:'4px'}}>
-            {filtered.length} resultado{filtered.length!==1?'s':''} para "{search}"
-          </p>
-        )}
-      </div>
 
       <div className={styles.filters}>
         {[
@@ -419,18 +481,22 @@ export default function Dashboard() {
           {key:'urgente', label:`Urgente (${urgente})`},
           {key:'activos', label:`Activos (${activos})`},
         ].map(f=>(
-          <button key={f.key}
-            className={`${styles.filterBtn} ${filter===f.key?styles.filterActive:''}`}
-            onClick={()=>setFilter(f.key)}>
-            {f.label}
-          </button>
+          <button key={f.key} className={`${styles.filterBtn} ${filter===f.key?styles.filterActive:''}`}
+            onClick={()=>setFilter(f.key)}>{f.label}</button>
         ))}
       </div>
+
+      <input
+        type="text" placeholder="🔍 Buscar por nombre o teléfono..."
+        value={search} onChange={e=>setSearch(e.target.value)}
+        style={{width:'100%',padding:'10px 14px',borderRadius:'8px',border:'1px solid #333',
+          background:'#1a1a1a',color:'#fff',fontSize:'14px',boxSizing:'border-box',marginBottom:'8px'}}
+      />
 
       <div className={styles.list}>
         {filtered.length===0 && (
           <div className={styles.empty}>
-            {search ? `No se encontró "${search}".` : clients.length===0?'Todavía no hay clientes. Agregá el primero.':'No hay clientes en este filtro.'}
+            {clients.length===0?'Todavía no hay clientes. Agregá el primero.':'No hay clientes en este filtro.'}
           </div>
         )}
         {filtered.map(c=>{
@@ -465,7 +531,7 @@ export default function Dashboard() {
               ):(
                 <div style={{display:'flex',gap:'4px'}}>
                   <button className={styles.btnPrimary} style={{padding:'4px 8px',fontSize:'13px'}}
-                    onClick={()=>openSelloModal(c)} title="Agregar corte">+✂️</button>
+                    onClick={()=>handleAddSello(c)} title="Agregar corte de hoy">+✂️</button>
                   <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
                     onClick={()=>setCardId(c.id)} title="Ver tarjeta">🎫</button>
                   <button className={styles.btnSecondary} style={{padding:'4px 8px',fontSize:'13px'}}
