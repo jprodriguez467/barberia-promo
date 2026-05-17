@@ -41,7 +41,7 @@ function getClickedCircle(canvas, e) {
   const rowY = [163,298]
   const R = 55
   for(let i=0; i<10; i++) {
-    if(i===4 || i===9) continue // skip 50% OFF y corte gratis
+    if(i===4 || i===9) continue
     const cx = xs[i%5], cy = rowY[Math.floor(i/5)]
     if(Math.sqrt((x-cx)**2+(y-cy)**2) <= R) return i
   }
@@ -79,14 +79,11 @@ function drawLoyaltyCard(canvas, client) {
     }
     ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2)
     ctx.strokeStyle=stamped?'#FF6B00':'#444'; ctx.lineWidth=2.5; ctx.stroke()
-
-    // hint: círculos vacíos editables tienen cursor pointer visual (borde punteado)
     if(!stamped && !is5 && !is10) {
       ctx.beginPath(); ctx.arc(cx,cy,R-4,0,Math.PI*2)
       ctx.strokeStyle='rgba(255,107,0,0.15)'; ctx.lineWidth=1.5
       ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([])
     }
-
     ctx.textAlign='center'
     if(is5){
       ctx.fillStyle='#FF4444'; ctx.font='bold 20px Arial'; ctx.fillText('50%',cx,cy-4)
@@ -118,6 +115,7 @@ export default function Dashboard() {
   const [clients,setClients]   = useState([])
   const [loading,setLoading]   = useState(true)
   const [filter,setFilter]     = useState('todos')
+  const [search,setSearch]     = useState('')
   const [showForm,setShowForm] = useState(false)
   const [deleting,setDeleting] = useState(null)
   const [saving,setSaving]     = useState(false)
@@ -125,7 +123,7 @@ export default function Dashboard() {
   const [editing,setEditing]   = useState(null)
   const [editForm,setEditForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const [form,setForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
-  const [selloEdit,setSelloEdit] = useState(null) // {index, date}
+  const [selloEdit,setSelloEdit] = useState(null)
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -153,6 +151,15 @@ export default function Dashboard() {
       if(filter==='urgente') return d>=0&&d<=3
       if(filter==='activos') return d>=0
       return true
+    })
+    .filter(c=>{
+      if(!search.trim()) return true
+      const q=search.toLowerCase()
+      return (
+        c.nombre?.toLowerCase().includes(q) ||
+        c.apellido?.toLowerCase().includes(q) ||
+        c.telefono?.includes(q)
+      )
     })
 
   async function handleAdd(e) {
@@ -280,25 +287,19 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
 
-      {/* Modal tarjeta */}
       {cardClient && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:1000,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px'}}>
-
           <canvas ref={canvasRef} width={780} height={430}
             onClick={handleCanvasClick}
             style={{maxWidth:'100%',borderRadius:'12px',border:'2px solid #FF6B00',cursor:'pointer'}} />
-
-          {/* Panel edición de sello */}
           {selloEdit && (()=>{
             const sellos = cardClient.sellos?.length ? [...cardClient.sellos].sort() : [cardClient.fechaCorte]
             const isStamped = selloEdit.index < sellos.length
             return (
               <div style={{marginTop:'12px',background:'#1a1a1a',border:'1px solid #FF6B00',borderRadius:'10px',
                 padding:'14px 20px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',justifyContent:'center'}}>
-                <span style={{color:'#FF6B00',fontWeight:'bold',fontSize:'14px'}}>
-                  ✏️ Sello #{selloEdit.index+1}
-                </span>
+                <span style={{color:'#FF6B00',fontWeight:'bold',fontSize:'14px'}}>✏️ Sello #{selloEdit.index+1}</span>
                 <input type="date" value={selloEdit.date}
                   onChange={e=>setSelloEdit(s=>({...s,date:e.target.value}))}
                   style={{padding:'6px 10px',borderRadius:'6px',border:'1px solid #FF6B00',
@@ -307,42 +308,30 @@ export default function Dashboard() {
                   <>
                     <button onClick={handleSelloEditSave}
                       style={{background:'#FF6B00',color:'#fff',border:'none',borderRadius:'6px',
-                        padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>
-                      ✅ Guardar fecha
-                    </button>
+                        padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>✅ Guardar fecha</button>
                     <button onClick={handleSelloEditDelete}
                       style={{background:'#cc2222',color:'#fff',border:'none',borderRadius:'6px',
-                        padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>
-                      🗑 Borrar sello
-                    </button>
+                        padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>🗑 Borrar sello</button>
                   </>
                 ) : (
                   <button onClick={handleSelloEditAdd}
                     style={{background:'#FF6B00',color:'#fff',border:'none',borderRadius:'6px',
-                      padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>
-                    ➕ Agregar sello
-                  </button>
+                      padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>➕ Agregar sello</button>
                 )}
                 <button onClick={()=>setSelloEdit(null)}
                   style={{background:'transparent',color:'#aaa',border:'1px solid #444',borderRadius:'6px',
-                    padding:'6px 12px',cursor:'pointer'}}>
-                  Cancelar
-                </button>
+                    padding:'6px 12px',cursor:'pointer'}}>Cancelar</button>
               </div>
             )
           })()}
-
           <div style={{marginTop:'12px',display:'flex',gap:'10px'}}>
             <button className={styles.btnPrimary} onClick={handleDownload}>⬇️ Descargar</button>
             <button className={styles.btnSecondary} onClick={()=>{setCardId(null);setSelloEdit(null)}}>Cerrar</button>
           </div>
-          <p style={{color:'#666',fontSize:'11px',marginTop:'8px'}}>
-            Tocá cualquier círculo numerado para editar su fecha
-          </p>
+          <p style={{color:'#666',fontSize:'11px',marginTop:'8px'}}>Tocá cualquier círculo numerado para editar su fecha</p>
         </div>
       )}
 
-      {/* Modal editar */}
       {editing && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
@@ -379,7 +368,6 @@ export default function Dashboard() {
                   onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} />
               </div>
             </div>
-
             {editingClient && (()=>{
               const sellos = editingClient.sellos?.length ? [...editingClient.sellos].sort() : [editingClient.fechaCorte]
               return (
@@ -402,7 +390,6 @@ export default function Dashboard() {
                 </div>
               )
             })()}
-
             <div style={{display:'flex',gap:'10px',justifyContent:'flex-end'}}>
               <button type="button" className={styles.btnSecondary} onClick={()=>setEditing(null)}>Cancelar</button>
               <button type="submit" className={styles.btnPrimary} disabled={saving}>
@@ -477,6 +464,18 @@ export default function Dashboard() {
         </form>
       )}
 
+      {/* Barra de búsqueda */}
+      <div style={{padding:'0 16px 8px'}}>
+        <input
+          type="text"
+          placeholder="🔍 Buscar por nombre, apellido o teléfono..."
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          style={{width:'100%',padding:'10px 14px',borderRadius:'8px',
+            border:'1px solid #ddd',fontSize:'14px',boxSizing:'border-box'}}
+        />
+      </div>
+
       <div className={styles.filters}>
         {[
           {key:'todos',   label:`Todos (${clients.length})`},
@@ -495,7 +494,7 @@ export default function Dashboard() {
       <div className={styles.list}>
         {filtered.length===0 && (
           <div className={styles.empty}>
-            {clients.length===0?'Todavía no hay clientes. Agregá el primero.':'No hay clientes en este filtro.'}
+            {search ? `No se encontró "${search}".` : clients.length===0 ? 'Todavía no hay clientes.' : 'No hay clientes en este filtro.'}
           </div>
         )}
         {filtered.map(c=>{
