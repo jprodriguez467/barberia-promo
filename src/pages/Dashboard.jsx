@@ -120,8 +120,9 @@ export default function Dashboard() {
   const [selloEdit,setSelloEdit] = useState(null)
   const [ventaForm,setVentaForm] = useState({descripcion:'',monto:''})
   const [deletingVenta,setDeletingVenta] = useState(null)
-  const [showHoyModal,setShowHoyModal]   = useState(false)
-  const [removingHoy,setRemovingHoy]     = useState(null)
+  const [showDiaModal,setShowDiaModal]   = useState(false)
+  const [diaSelec,setDiaSelec]           = useState(todayISO)
+  const [removingDia,setRemovingDia]     = useState(null)
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -157,10 +158,11 @@ export default function Dashboard() {
   const recProdHoy = ventasHoy.reduce((s,v)=>s+Number(v.monto),0)
   const recProdMes = ventasMes.reduce((s,v)=>s+Number(v.monto),0)
 
-  // Clientes que tienen sello HOY (para el modal)
-  const clientesHoy = clients.filter(c =>
-    (c.sellos||[c.fechaCorte]).includes(todayISO)
+  // Clientes del día seleccionado
+  const clientesDia = clients.filter(c =>
+    (c.sellos||[c.fechaCorte]).includes(diaSelec)
   )
+  const recServDia = clientesDia.reduce((s,c)=>s+precioServicio(c),0)
 
   // ── Filtros clientes ──────────────────────────
   const urgente = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=3}).length
@@ -212,13 +214,13 @@ export default function Dashboard() {
     catch(err){ alert('Error: '+err.message) }
   }
 
-  async function handleRemoveTodaySello(c) {
-    const sellos = (c.sellos?.length ? c.sellos : [c.fechaCorte]).filter(s=>s!==todayISO)
+  async function handleRemoveDiaSello(c) {
+    const sellos=(c.sellos?.length?c.sellos:[c.fechaCorte]).filter(s=>s!==diaSelec)
     if(sellos.length===0){ alert('No se puede quitar el único sello.'); return }
-    const newFecha = [...sellos].sort()[sellos.length-1]
+    const newFecha=[...sellos].sort()[sellos.length-1]
     try{
       await updateDoc(doc(db,'clientes',c.id),{sellos,fechaCorte:newFecha})
-      setRemovingHoy(null)
+      setRemovingDia(null)
     } catch(err){ alert('Error: '+err.message) }
   }
 
@@ -309,53 +311,97 @@ export default function Dashboard() {
   const editingClient = editing ? clients.find(c=>c.id===editing) : null
   const todayLabel = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
   const mesLabel   = new Date().toLocaleDateString('es-AR',{month:'long',year:'numeric'})
+
+  // Label del día seleccionado
+  const diaLabel = diaSelec===todayISO
+    ? 'hoy'
+    : parseDate(diaSelec).toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
+
   if(loading) return <div className={styles.loading}>Cargando...</div>
 
   return (
     <div className={styles.page}>
 
-      {/* ── Modal clientes de hoy ── */}
-      {showHoyModal && (
+      {/* ── Modal listado por día ── */}
+      {showDiaModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
           display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
-          <div style={{background:'#fff',borderRadius:'14px',padding:'24px',width:'100%',maxWidth:'480px',
-            maxHeight:'80vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:'12px'}}>
-            <h2 style={{margin:0,fontSize:'18px'}}>✂️ Clientes atendidos hoy</h2>
-            <p style={{margin:0,fontSize:'13px',color:'#888'}}>
-              {new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}
-            </p>
-            {clientesHoy.length===0 && <p style={{color:'#aaa'}}>Ningún cliente registrado hoy.</p>}
-            {clientesHoy.map(c=>{
-              const isRemoving = removingHoy===c.id
-              return (
-                <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-                  background:'#f9f9f9',border:'1px solid #eee',borderRadius:'10px',padding:'12px 14px'}}>
-                  <div>
-                    <p style={{margin:0,fontWeight:'bold',fontSize:'15px'}}>{c.nombre} {c.apellido}</p>
-                    <p style={{margin:0,fontSize:'12px',color:'#888'}}>
-                      {c.servicio==='pelo_barba'?'✂️🧔 Pelo y barba':'✂️ Corte de pelo'} · {fmt(c.servicio==='pelo_barba'?17000:12000)}
-                    </p>
-                  </div>
-                  {isRemoving ? (
-                    <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
-                      <span style={{fontSize:'12px',color:'#cc2222'}}>¿Quitar?</span>
-                      <button className={styles.btnDanger} style={{padding:'4px 10px',fontSize:'12px'}}
-                        onClick={()=>handleRemoveTodaySello(c)}>Sí</button>
-                      <button className={styles.btnSecondary} style={{padding:'4px 10px',fontSize:'12px'}}
-                        onClick={()=>setRemovingHoy(null)}>No</button>
+          <div style={{background:'#fff',borderRadius:'14px',padding:'24px',width:'100%',maxWidth:'500px',
+            maxHeight:'85vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:'14px'}}>
+
+            <h2 style={{margin:0,fontSize:'18px'}}>📋 Clientes atendidos</h2>
+
+            {/* Selector de fecha */}
+            <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+              <label style={{fontSize:'13px',color:'#555',fontWeight:'bold'}}>Seleccioná un día:</label>
+              <input type="date" value={diaSelec} max={todayISO}
+                onChange={e=>{setDiaSelec(e.target.value); setRemovingDia(null)}}
+                style={{padding:'7px 12px',borderRadius:'8px',border:'1px solid #ddd',fontSize:'14px'}} />
+              <span style={{fontSize:'13px',color:'#888'}}>
+                {parseDate(diaSelec).toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}
+              </span>
+            </div>
+
+            {/* Resumen del día */}
+            <div style={{display:'flex',gap:'10px',flexWrap:'wrap'}}>
+              <div style={{background:'#fff8f0',border:'1px solid #FF6B00',borderRadius:'8px',
+                padding:'10px 16px',textAlign:'center',flex:1}}>
+                <div style={{fontSize:'20px',fontWeight:'bold',color:'#FF6B00'}}>{clientesDia.length}</div>
+                <div style={{fontSize:'11px',color:'#888'}}>Clientes</div>
+              </div>
+              <div style={{background:'#e8f5e9',border:'1px solid #4caf50',borderRadius:'8px',
+                padding:'10px 16px',textAlign:'center',flex:1}}>
+                <div style={{fontSize:'20px',fontWeight:'bold',color:'#1a7a1a'}}>{fmt(recServDia)}</div>
+                <div style={{fontSize:'11px',color:'#888'}}>Servicios</div>
+              </div>
+            </div>
+
+            {/* Lista de clientes */}
+            {clientesDia.length===0
+              ? <p style={{color:'#aaa',textAlign:'center',margin:'8px 0'}}>No hay clientes registrados para este día.</p>
+              : clientesDia.map(c=>{
+                  const isRemoving=removingDia===c.id
+                  return (
+                    <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                      background:'#f9f9f9',border:'1px solid #eee',borderRadius:'10px',padding:'12px 14px',gap:'8px'}}>
+                      <div style={{flex:1}}>
+                        <p style={{margin:0,fontWeight:'bold',fontSize:'15px'}}>{c.nombre} {c.apellido}</p>
+                        <p style={{margin:'2px 0 0',fontSize:'12px',color:'#888'}}>
+                          {c.servicio==='pelo_barba'?'✂️🧔 Pelo y barba':'✂️ Corte de pelo'} · {fmt(precioServicio(c))}
+                        </p>
+                      </div>
+
+                      {/* Estado + acción */}
+                      {isRemoving ? (
+                        <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                          <span style={{fontSize:'12px',color:'#cc2222',whiteSpace:'nowrap'}}>¿Quitar sello?</span>
+                          <button className={styles.btnDanger} style={{padding:'4px 10px',fontSize:'12px'}}
+                            onClick={()=>handleRemoveDiaSello(c)}>Sí</button>
+                          <button className={styles.btnSecondary} style={{padding:'4px 10px',fontSize:'12px'}}
+                            onClick={()=>setRemovingDia(null)}>No</button>
+                        </div>
+                      ):(
+                        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                          <span style={{background:'#e8f5e9',color:'#1a7a1a',fontWeight:'bold',
+                            fontSize:'12px',padding:'4px 10px',borderRadius:'20px',whiteSpace:'nowrap'}}>
+                            ✅ Vino
+                          </span>
+                          <button onClick={()=>setRemovingDia(c.id)}
+                            style={{background:'#fff',border:'1px solid #ddd',borderRadius:'6px',
+                              padding:'4px 10px',cursor:'pointer',fontSize:'12px',color:'#cc2222',
+                              fontWeight:'bold',whiteSpace:'nowrap'}}>
+                            ✕ Error
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  ):(
-                    <button onClick={()=>setRemovingHoy(c.id)}
-                      style={{background:'#fff',border:'1px solid #ddd',borderRadius:'6px',padding:'6px 12px',
-                        cursor:'pointer',fontSize:'12px',color:'#cc2222',fontWeight:'bold'}}>
-                      ✕ No vino
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                  )
+                })
+            }
+
             <div style={{display:'flex',justifyContent:'flex-end',marginTop:'4px'}}>
-              <button className={styles.btnSecondary} onClick={()=>{setShowHoyModal(false);setRemovingHoy(null)}}>
+              <button className={styles.btnSecondary}
+                onClick={()=>{setShowDiaModal(false);setRemovingDia(null)}}>
                 Cerrar
               </button>
             </div>
@@ -591,15 +637,14 @@ export default function Dashboard() {
           </h2>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'20px'}}>
 
-            {/* Card clickeable clientes hoy */}
-            <div onClick={()=>setShowHoyModal(true)}
+            <div onClick={()=>{setDiaSelec(todayISO);setShowDiaModal(true)}}
               style={{background:'#fff8f0',borderRadius:'10px',padding:'14px',textAlign:'center',
-                border:'2px solid #FF6B00',cursor:'pointer',transition:'transform 0.1s'}}
+                border:'2px solid #FF6B00',cursor:'pointer'}}
               onMouseEnter={e=>e.currentTarget.style.transform='scale(1.03)'}
               onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
               <div style={{fontSize:'22px',fontWeight:'bold',color:'#FF6B00'}}>{sellosHoy.length}</div>
               <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Clientes atendidos</div>
-              <div style={{fontSize:'10px',color:'#FF6B00',marginTop:'4px'}}>👆 Ver quiénes son</div>
+              <div style={{fontSize:'10px',color:'#FF6B00',marginTop:'4px'}}>👆 Ver listado</div>
             </div>
 
             <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
@@ -617,9 +662,9 @@ export default function Dashboard() {
           </div>
 
           <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>
-            📆 {(mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1))}
+            📆 {mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1)}
           </h2>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'24px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'20px'}}>
             <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
               <div style={{fontSize:'22px',fontWeight:'bold',color:'#FF6B00'}}>{sellosMes.length}</div>
               <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Clientes atendidos</div>
@@ -637,6 +682,13 @@ export default function Dashboard() {
               <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Total del mes</div>
             </div>
           </div>
+
+          {/* Botón ver otro día */}
+          <button onClick={()=>{setDiaSelec(todayISO);setShowDiaModal(true)}}
+            style={{marginBottom:'24px',background:'#f5f5f5',border:'1px solid #ddd',borderRadius:'8px',
+              padding:'10px 18px',cursor:'pointer',fontSize:'14px',fontWeight:'bold',color:'#555'}}>
+            📋 Ver clientes de otro día
+          </button>
 
           <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>🛍️ Registrar venta de producto</h2>
           <form onSubmit={handleAddVenta} style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'16px'}}>
