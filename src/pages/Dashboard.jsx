@@ -30,16 +30,14 @@ function getStatus(days) {
 }
 function initials(n,a) { return `${n?.[0]??''}${a?.[0]??''}`.toUpperCase() }
 const todayISO = new Date().toISOString().split('T')[0]
-const monthISO = todayISO.slice(0,7) // YYYY-MM
+const monthISO = todayISO.slice(0,7)
 
 function getClickedCircle(canvas, e) {
-  const rect = canvas.getBoundingClientRect()
-  const scaleX = 780 / rect.width
-  const scaleY = 430 / rect.height
-  const x = (e.clientX - rect.left) * scaleX
-  const y = (e.clientY - rect.top) * scaleY
-  const xs = [78,234,390,546,702], rowY = [163,298], R = 55
-  for(let i=0; i<10; i++) {
+  const rect=canvas.getBoundingClientRect()
+  const scaleX=780/rect.width, scaleY=430/rect.height
+  const x=(e.clientX-rect.left)*scaleX, y=(e.clientY-rect.top)*scaleY
+  const xs=[78,234,390,546,702], rowY=[163,298], R=55
+  for(let i=0;i<10;i++){
     if(i===4||i===9) continue
     const cx=xs[i%5], cy=rowY[Math.floor(i/5)]
     if(Math.sqrt((x-cx)**2+(y-cy)**2)<=R) return i
@@ -103,25 +101,27 @@ function drawLoyaltyCard(canvas, client) {
   ctx.textAlign='center'; ctx.fillText(servNombre,W/2,H-14)
 }
 
-function fmt(n) { return '$'+n.toLocaleString('es-AR') }
+function fmt(n) { return '$'+Number(n).toLocaleString('es-AR') }
 
 export default function Dashboard() {
-  const [clients,setClients]   = useState([])
-  const [ventas,setVentas]     = useState([])
-  const [loading,setLoading]   = useState(true)
-  const [view,setView]         = useState('clientes') // 'clientes' | 'estadisticas'
-  const [filter,setFilter]     = useState('todos')
-  const [search,setSearch]     = useState('')
-  const [showForm,setShowForm] = useState(false)
-  const [deleting,setDeleting] = useState(null)
-  const [saving,setSaving]     = useState(false)
-  const [cardId,setCardId]     = useState(null)
-  const [editing,setEditing]   = useState(null)
-  const [editForm,setEditForm] = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
-  const [form,setForm]         = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
+  const [clients,setClients]     = useState([])
+  const [ventas,setVentas]       = useState([])
+  const [loading,setLoading]     = useState(true)
+  const [view,setView]           = useState('clientes')
+  const [filter,setFilter]       = useState('todos')
+  const [search,setSearch]       = useState('')
+  const [showForm,setShowForm]   = useState(false)
+  const [deleting,setDeleting]   = useState(null)
+  const [saving,setSaving]       = useState(false)
+  const [cardId,setCardId]       = useState(null)
+  const [editing,setEditing]     = useState(null)
+  const [editForm,setEditForm]   = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
+  const [form,setForm]           = useState({nombre:'',apellido:'',telefono:'',fechaCorte:todayISO,servicio:'pelo'})
   const [selloEdit,setSelloEdit] = useState(null)
   const [ventaForm,setVentaForm] = useState({descripcion:'',monto:''})
   const [deletingVenta,setDeletingVenta] = useState(null)
+  const [showHoyModal,setShowHoyModal]   = useState(false)
+  const [removingHoy,setRemovingHoy]     = useState(null)
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -144,18 +144,6 @@ export default function Dashboard() {
 
   // ── Estadísticas ──────────────────────────────
   const precioServicio = c => c.servicio==='pelo_barba' ? 17000 : 12000
-
-  // Clientes atendidos hoy (sellos de hoy)
-  const clientesHoy = clients.filter(c =>
-    (c.sellos||[c.fechaCorte]).includes(todayISO)
-  )
-  const recaudadoServiciosHoy = clientesHoy.reduce((s,c) => s+precioServicio(c), 0)
-
-  // Clientes atendidos este mes
-  const clientesMes = clients.filter(c =>
-    (c.sellos||[c.fechaCorte]).some(s => s.startsWith(monthISO))
-  )
-  // Sellos de este mes por cliente (puede haber varios cortes en el mes)
   const sellosHoy = clients.flatMap(c =>
     (c.sellos||[c.fechaCorte]).filter(s=>s===todayISO).map(()=>precioServicio(c))
   )
@@ -164,12 +152,15 @@ export default function Dashboard() {
   )
   const recServHoy = sellosHoy.reduce((a,b)=>a+b,0)
   const recServMes = sellosMes.reduce((a,b)=>a+b,0)
-
-  // Ventas de productos
-  const ventasHoy = ventas.filter(v=>v.fecha===todayISO)
-  const ventasMes = ventas.filter(v=>v.fecha?.startsWith(monthISO))
+  const ventasHoy  = ventas.filter(v=>v.fecha===todayISO)
+  const ventasMes  = ventas.filter(v=>v.fecha?.startsWith(monthISO))
   const recProdHoy = ventasHoy.reduce((s,v)=>s+Number(v.monto),0)
   const recProdMes = ventasMes.reduce((s,v)=>s+Number(v.monto),0)
+
+  // Clientes que tienen sello HOY (para el modal)
+  const clientesHoy = clients.filter(c =>
+    (c.sellos||[c.fechaCorte]).includes(todayISO)
+  )
 
   // ── Filtros clientes ──────────────────────────
   const urgente = clients.filter(c=>{const d=daysLeft(c.fechaCorte);return d>=0&&d<=3}).length
@@ -221,6 +212,16 @@ export default function Dashboard() {
     catch(err){ alert('Error: '+err.message) }
   }
 
+  async function handleRemoveTodaySello(c) {
+    const sellos = (c.sellos?.length ? c.sellos : [c.fechaCorte]).filter(s=>s!==todayISO)
+    if(sellos.length===0){ alert('No se puede quitar el único sello.'); return }
+    const newFecha = [...sellos].sort()[sellos.length-1]
+    try{
+      await updateDoc(doc(db,'clientes',c.id),{sellos,fechaCorte:newFecha})
+      setRemovingHoy(null)
+    } catch(err){ alert('Error: '+err.message) }
+  }
+
   async function handleRemoveLastSello(clientId, sellos) {
     if(sellos.length<=1){ alert('No se puede borrar el único sello.'); return }
     const newSellos=[...sellos].sort().slice(0,-1)
@@ -250,7 +251,7 @@ export default function Dashboard() {
     const idx=getClickedCircle(canvasRef.current,e)
     if(idx===-1) return
     const sellos=cardClient.sellos?.length?[...cardClient.sellos].sort():[cardClient.fechaCorte]
-    setSelloEdit({index:idx, date:sellos[idx]||todayISO})
+    setSelloEdit({index:idx,date:sellos[idx]||todayISO})
   }
 
   async function handleSelloEditSave() {
@@ -281,15 +282,11 @@ export default function Dashboard() {
   }
 
   async function handleAddVenta(e) {
-    e.preventDefault()
-    if(!ventaForm.descripcion.trim()||!ventaForm.monto) return
-    setSaving(true)
+    e.preventDefault(); setSaving(true)
     try {
       await addDoc(collection(db,'ventas'),{
-        descripcion:ventaForm.descripcion.trim(),
-        monto:Number(ventaForm.monto),
-        fecha:todayISO,
-        createdAt:serverTimestamp(),
+        descripcion:ventaForm.descripcion.trim(), monto:Number(ventaForm.monto),
+        fecha:todayISO, createdAt:serverTimestamp(),
       })
       setVentaForm({descripcion:'',monto:''})
     } catch(err){ alert('Error: '+err.message) }
@@ -311,11 +308,60 @@ export default function Dashboard() {
 
   const editingClient = editing ? clients.find(c=>c.id===editing) : null
   const todayLabel = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
-  const mesLabel = new Date().toLocaleDateString('es-AR',{month:'long',year:'numeric'})
+  const mesLabel   = new Date().toLocaleDateString('es-AR',{month:'long',year:'numeric'})
   if(loading) return <div className={styles.loading}>Cargando...</div>
 
   return (
     <div className={styles.page}>
+
+      {/* ── Modal clientes de hoy ── */}
+      {showHoyModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,
+          display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
+          <div style={{background:'#fff',borderRadius:'14px',padding:'24px',width:'100%',maxWidth:'480px',
+            maxHeight:'80vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:'12px'}}>
+            <h2 style={{margin:0,fontSize:'18px'}}>✂️ Clientes atendidos hoy</h2>
+            <p style={{margin:0,fontSize:'13px',color:'#888'}}>
+              {new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}
+            </p>
+            {clientesHoy.length===0 && <p style={{color:'#aaa'}}>Ningún cliente registrado hoy.</p>}
+            {clientesHoy.map(c=>{
+              const isRemoving = removingHoy===c.id
+              return (
+                <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                  background:'#f9f9f9',border:'1px solid #eee',borderRadius:'10px',padding:'12px 14px'}}>
+                  <div>
+                    <p style={{margin:0,fontWeight:'bold',fontSize:'15px'}}>{c.nombre} {c.apellido}</p>
+                    <p style={{margin:0,fontSize:'12px',color:'#888'}}>
+                      {c.servicio==='pelo_barba'?'✂️🧔 Pelo y barba':'✂️ Corte de pelo'} · {fmt(c.servicio==='pelo_barba'?17000:12000)}
+                    </p>
+                  </div>
+                  {isRemoving ? (
+                    <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                      <span style={{fontSize:'12px',color:'#cc2222'}}>¿Quitar?</span>
+                      <button className={styles.btnDanger} style={{padding:'4px 10px',fontSize:'12px'}}
+                        onClick={()=>handleRemoveTodaySello(c)}>Sí</button>
+                      <button className={styles.btnSecondary} style={{padding:'4px 10px',fontSize:'12px'}}
+                        onClick={()=>setRemovingHoy(null)}>No</button>
+                    </div>
+                  ):(
+                    <button onClick={()=>setRemovingHoy(c.id)}
+                      style={{background:'#fff',border:'1px solid #ddd',borderRadius:'6px',padding:'6px 12px',
+                        cursor:'pointer',fontSize:'12px',color:'#cc2222',fontWeight:'bold'}}>
+                      ✕ No vino
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            <div style={{display:'flex',justifyContent:'flex-end',marginTop:'4px'}}>
+              <button className={styles.btnSecondary} onClick={()=>{setShowHoyModal(false);setRemovingHoy(null)}}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal tarjeta */}
       {cardClient && (
@@ -337,7 +383,7 @@ export default function Dashboard() {
                     <button onClick={handleSelloEditSave} style={{background:'#FF6B00',color:'#fff',border:'none',borderRadius:'6px',padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>✅ Guardar</button>
                     <button onClick={handleSelloEditDelete} style={{background:'#cc2222',color:'#fff',border:'none',borderRadius:'6px',padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>🗑 Borrar</button>
                   </>
-                ) : (
+                ):(
                   <button onClick={handleSelloEditAdd} style={{background:'#FF6B00',color:'#fff',border:'none',borderRadius:'6px',padding:'6px 14px',cursor:'pointer',fontWeight:'bold'}}>➕ Agregar</button>
                 )}
                 <button onClick={()=>setSelloEdit(null)} style={{background:'transparent',color:'#aaa',border:'1px solid #444',borderRadius:'6px',padding:'6px 12px',cursor:'pointer'}}>Cancelar</button>
@@ -369,15 +415,13 @@ export default function Dashboard() {
                     onChange={e=>setEditForm(f=>({...f,[key]:e.target.value}))} />
                 </div>
               ))}
-              <div className={styles.field}>
-                <label>Servicio</label>
+              <div className={styles.field}><label>Servicio</label>
                 <select value={editForm.servicio} onChange={e=>setEditForm(f=>({...f,servicio:e.target.value}))}>
                   <option value="pelo">✂️ Corte de pelo — $12.000</option>
                   <option value="pelo_barba">✂️🧔 Pelo y barba — $17.000</option>
                 </select>
               </div>
-              <div className={styles.field}>
-                <label>Fecha último corte</label>
+              <div className={styles.field}><label>Fecha último corte</label>
                 <input type="date" value={editForm.fechaCorte} required onChange={e=>setEditForm(f=>({...f,fechaCorte:e.target.value}))} />
               </div>
             </div>
@@ -425,12 +469,12 @@ export default function Dashboard() {
       <div style={{display:'flex',gap:'8px',padding:'0 16px 12px'}}>
         <button onClick={()=>setView('clientes')}
           style={{padding:'8px 18px',borderRadius:'20px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'14px',
-            background:view==='clientes'?'#111':'#eee', color:view==='clientes'?'#fff':'#555'}}>
+            background:view==='clientes'?'#111':'#eee',color:view==='clientes'?'#fff':'#555'}}>
           👥 Clientes
         </button>
         <button onClick={()=>setView('estadisticas')}
           style={{padding:'8px 18px',borderRadius:'20px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'14px',
-            background:view==='estadisticas'?'#111':'#eee', color:view==='estadisticas'?'#fff':'#555'}}>
+            background:view==='estadisticas'?'#111':'#eee',color:view==='estadisticas'?'#fff':'#555'}}>
           📊 Estadísticas
         </button>
       </div>
@@ -542,39 +586,58 @@ export default function Dashboard() {
       {view==='estadisticas' && (
         <div style={{padding:'0 16px 32px'}}>
 
-          {/* Hoy */}
-          <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>📅 Hoy — {new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h2>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'10px',marginBottom:'20px'}}>
-            {[
-              {label:'Clientes atendidos', value: sellosHoy.length, color:'#FF6B00'},
-              {label:'Servicios', value: fmt(recServHoy), color:'#333'},
-              {label:'Productos', value: fmt(recProdHoy), color:'#333'},
-              {label:'Total del día', value: fmt(recServHoy+recProdHoy), color:'#1a7a1a', big:true},
-            ].map(s=>(
-              <div key={s.label} style={{background:s.big?'#e8f5e9':'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:s.big?'1px solid #4caf50':'1px solid #eee'}}>
-                <div style={{fontSize:s.big?'22px':'20px',fontWeight:'bold',color:s.color}}>{s.value}</div>
-                <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>{s.label}</div>
-              </div>
-            ))}
+          <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>
+            📅 Hoy — {new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}
+          </h2>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'20px'}}>
+
+            {/* Card clickeable clientes hoy */}
+            <div onClick={()=>setShowHoyModal(true)}
+              style={{background:'#fff8f0',borderRadius:'10px',padding:'14px',textAlign:'center',
+                border:'2px solid #FF6B00',cursor:'pointer',transition:'transform 0.1s'}}
+              onMouseEnter={e=>e.currentTarget.style.transform='scale(1.03)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+              <div style={{fontSize:'22px',fontWeight:'bold',color:'#FF6B00'}}>{sellosHoy.length}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Clientes atendidos</div>
+              <div style={{fontSize:'10px',color:'#FF6B00',marginTop:'4px'}}>👆 Ver quiénes son</div>
+            </div>
+
+            <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
+              <div style={{fontSize:'20px',fontWeight:'bold',color:'#333'}}>{fmt(recServHoy)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Servicios</div>
+            </div>
+            <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
+              <div style={{fontSize:'20px',fontWeight:'bold',color:'#333'}}>{fmt(recProdHoy)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Productos</div>
+            </div>
+            <div style={{background:'#e8f5e9',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #4caf50'}}>
+              <div style={{fontSize:'22px',fontWeight:'bold',color:'#1a7a1a'}}>{fmt(recServHoy+recProdHoy)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Total del día</div>
+            </div>
           </div>
 
-          {/* Mes */}
-          <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>📆 {mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1)}</h2>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'10px',marginBottom:'24px'}}>
-            {[
-              {label:'Clientes atendidos', value: sellosMes.length, color:'#FF6B00'},
-              {label:'Servicios', value: fmt(recServMes), color:'#333'},
-              {label:'Productos', value: fmt(recProdMes), color:'#333'},
-              {label:'Total del mes', value: fmt(recServMes+recProdMes), color:'#1a7a1a', big:true},
-            ].map(s=>(
-              <div key={s.label} style={{background:s.big?'#e8f5e9':'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:s.big?'1px solid #4caf50':'1px solid #eee'}}>
-                <div style={{fontSize:s.big?'22px':'20px',fontWeight:'bold',color:s.color}}>{s.value}</div>
-                <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>{s.label}</div>
-              </div>
-            ))}
+          <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>
+            📆 {(mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1))}
+          </h2>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'24px'}}>
+            <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
+              <div style={{fontSize:'22px',fontWeight:'bold',color:'#FF6B00'}}>{sellosMes.length}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Clientes atendidos</div>
+            </div>
+            <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
+              <div style={{fontSize:'20px',fontWeight:'bold',color:'#333'}}>{fmt(recServMes)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Servicios</div>
+            </div>
+            <div style={{background:'#f5f5f5',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #eee'}}>
+              <div style={{fontSize:'20px',fontWeight:'bold',color:'#333'}}>{fmt(recProdMes)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Productos</div>
+            </div>
+            <div style={{background:'#e8f5e9',borderRadius:'10px',padding:'14px',textAlign:'center',border:'1px solid #4caf50'}}>
+              <div style={{fontSize:'22px',fontWeight:'bold',color:'#1a7a1a'}}>{fmt(recServMes+recProdMes)}</div>
+              <div style={{fontSize:'11px',color:'#888',marginTop:'4px'}}>Total del mes</div>
+            </div>
           </div>
 
-          {/* Agregar producto */}
           <h2 style={{fontSize:'16px',fontWeight:'bold',margin:'0 0 10px'}}>🛍️ Registrar venta de producto</h2>
           <form onSubmit={handleAddVenta} style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'16px'}}>
             <input type="text" placeholder="Nombre del producto" value={ventaForm.descripcion}
@@ -588,7 +651,6 @@ export default function Dashboard() {
             </button>
           </form>
 
-          {/* Lista ventas de hoy */}
           {ventasHoy.length>0 && <>
             <p style={{fontWeight:'bold',fontSize:'13px',color:'#555',margin:'0 0 8px'}}>Productos vendidos hoy:</p>
             {ventasHoy.map(v=>(
